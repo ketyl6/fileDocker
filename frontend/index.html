@@ -1,12 +1,86 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pl">
 <head>
     <meta charset="UTF-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>fileDocker</title>
+    <link rel="stylesheet" href="./src/style.css">
 </head>
-<body>
-<div id="app"></div>
-<script src="./src/main.js" type="module"></script>
+<body class="dark-theme">
+    <div id="app">
+        <nav class="sidebar">
+            <div class="sidebar-top">
+                <div class="brand">fileDocker</div>
+                <ul class="nav-links">
+                    <li class="active" data-view="local">Lokalne pliki</li>
+                    <li data-view="cloud">Google Drive</li>
+                    <li data-view="network">Siec SMB/FTP</li>
+                    <li data-view="cleaner">Oczyszczanie</li>
+                </ul>
+            </div>
+            <div class="theme-toggle" id="theme-toggle-btn">Zmien motyw</div>
+        </nav>
+
+        <main class="content">
+            <header class="topbar">
+                <div class="path-container">
+                    <select id="drive-selector" class="drive-select" style="display: none;"></select>
+                    <h2 id="view-title">Lokalne pliki</h2>
+                </div>
+                <div class="topbar-right">
+                    <button id="settings-btn" class="icon-btn" title="Ustawienia">
+                        <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </header>
+            
+            <div class="file-area" id="file-area">
+            </div>
+
+            <div class="bottom-actions-bar" id="file-open-bar" style="display: none;">
+                <span>Otworz za pomoca:</span>
+                <input type="text" id="custom-app-input" class="input-field" placeholder="domyslny systemowy">
+                <button id="btn-open-file" class="btn primary">Otworz plik</button>
+            </div>
+
+            <div class="bottom-shortcuts">
+                <!-- Skroty klawiszowe wg ustawien -->
+            </div>
+        </main>
+    </div>
+
+    <div id="context-menu" class="context-menu">
+        <ul>
+            <li id="cm-new-file">Nowy plik (n)</li>
+            <li id="cm-new-dir">Nowy folder (Shift+n)</li>
+            <li id="cm-copy">Kopiuj (c)</li>
+            <li id="cm-cut">Wytnij (x)</li>
+            <li id="cm-paste">Wklej (v)</li>
+            <li id="cm-delete" class="danger">Usun (Delete)</li>
+        </ul>
+    </div>
+
+    <div id="custom-alert" class="alert-overlay" style="display: none;">
+        <div class="alert-box">
+            <p id="alert-text"></p>
+            <button id="alert-ok" class="btn primary">OK</button>
+        </div>
+    </div>
+
+    <div id="input-modal" class="alert-overlay" style="display: none;">
+        <div class="alert-box">
+            <p id="input-text"></p>
+            <input type="text" id="input-field-modal" class="input-field" style="width: 100%; box-sizing: border-box; margin-bottom: 1.5rem;">
+            <div style="display: flex; gap: 1rem; justify-content: center;">
+                <button id="input-ok" class="btn primary">Utworz</button>
+                <button id="input-cancel" class="btn">Anuluj</button>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="./src/main.js"></script>
 </body>
 </html>
