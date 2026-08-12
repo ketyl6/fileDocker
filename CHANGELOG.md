@@ -2,6 +2,11 @@
 
 All notable changes to fileDocker are documented in this file.
 
+## [alpha2.2] - 2026-08-12
+
+### Added
+- **More archives unpack support**: addes tar and rar support for unpacking local files.
+
 ## [alpha2.1] - 2026-08-12
 
 ### Changed

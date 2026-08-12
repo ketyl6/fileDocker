@@ -426,13 +426,35 @@ func createRar(srcPaths []string, destPath string, baseDir string) error {
 	return nil
 }
 
+// Zmodyfikowana funkcja do dekompresji (wsparcie zip, tar, rar)
 func (a *App) UnzipItem(src string) error {
-	dest := src[:len(src)-len(filepath.Ext(src))]
+	ext := strings.ToLower(filepath.Ext(src))
+	dest := src[:len(src)-len(ext)]
+
+	err := os.MkdirAll(dest, 0755)
+	if err != nil {
+		return err
+	}
+
+	switch ext {
+	case ".zip":
+		return extractZip(src, dest)
+	case ".tar":
+		return extractTar(src, dest)
+	case ".rar":
+		return extractRar(src, dest)
+	default:
+		return fmt.Errorf("nieobsługiwany format do wypakowania: %s", ext)
+	}
+}
+
+func extractZip(src string, dest string) error {
 	reader, err := zip.OpenReader(src)
 	if err != nil {
 		return err
 	}
 	defer reader.Close()
+
 	for _, file := range reader.File {
 		path := filepath.Join(dest, file.Name)
 		if file.FileInfo().IsDir() {
@@ -452,6 +474,55 @@ func (a *App) UnzipItem(src string) error {
 		io.Copy(f2, f1)
 		f1.Close()
 		f2.Close()
+	}
+	return nil
+}
+
+func extractTar(src string, dest string) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	tr := tar.NewReader(f)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		path := filepath.Join(dest, hdr.Name)
+		if hdr.FileInfo().IsDir() {
+			os.MkdirAll(path, hdr.FileInfo().Mode())
+			continue
+		}
+
+		os.MkdirAll(filepath.Dir(path), 0755)
+		f2, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, hdr.FileInfo().Mode())
+		if err != nil {
+			return err
+		}
+		io.Copy(f2, tr)
+		f2.Close()
+	}
+	return nil
+}
+
+func extractRar(src string, dest string) error {
+	// Próba wypakowania używając unrar
+	cmd := exec.Command("unrar", "x", "-y", src, dest+string(filepath.Separator))
+	err := cmd.Run()
+	if err != nil {
+		// Fallback do rar
+		cmd = exec.Command("rar", "x", "-y", src, dest+string(filepath.Separator))
+		err = cmd.Run()
+		if err != nil {
+			return fmt.Errorf("blad wypakowywania RAR (wymaga CLI unrar lub rar zainstalowanego w systemie): %v", err)
+		}
 	}
 	return nil
 }
