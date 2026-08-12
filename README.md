@@ -1,8 +1,8 @@
-# fileDocker ver. alpha2
+# fileDocker ver. alpha2.1
 
 **fileDocker** is a lightweight, cross-platform desktop file explorer built with [Wails](https://wails.io/) (Go backend + HTML/CSS/JS frontend). It's designed as a fast, keyboard-driven alternative to the default OS file manager, inspired by tools like **Ranger** and **Total Commander**.
 
-> ⚠️ **Status: alpha2** - local file management is now solid and multi-select/archiving bugs from alpha1 have been fixed. Cloud (Google Drive), SMB/FTP, and Dual Pane remain partial or stubbed. See [CHANGELOG.md](./CHANGELOG.md) for details on what changed since alpha1.
+> ⚠️ **Status: alpha2.1** - local file management is now solid and multi-select/archiving bugs from alpha1 have been fixed. Cloud (Google Drive), SMB/FTP, and Dual Pane remain partial or stubbed. See [CHANGELOG.md](./CHANGELOG.md) for details on what changed since alpha1.
 
 ## Features
 
@@ -121,7 +121,7 @@ wails build -clean
 
 The current UI strings are in **Polish**. Internationalization has not been implemented yet.
 
-## Known limitations (alpha2)
+## Known limitations (alpha2.1)
 
 - Dual Pane mode is present in settings/shortcuts but non-functional
 - SMB/FTP is a front-end placeholder with no backend connection logic
@@ -132,4 +132,4 @@ The current UI strings are in **Polish**. Internationalization has not been impl
 
 ## Changelog
 
-See [CHANGELOG.md](./CHANGELOG.md) for the full list of changes between alpha1 and alpha2.
+See [CHANGELOG.md](./CHANGELOG.md) for the full list of changes.

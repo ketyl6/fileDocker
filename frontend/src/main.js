@@ -24,6 +24,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const archiveTypeSelect = document.getElementById('archive-type-select');
     const inputOk = document.getElementById('input-ok');
     const inputCancel = document.getElementById('input-cancel');
+
+    const confirmModal = document.getElementById('confirm-modal');
+    const confirmText = document.getElementById('confirm-text');
+    const confirmYes = document.getElementById('confirm-yes');
+    const confirmNo = document.getElementById('confirm-no');
     
     let currentMode = 'local';
     let previousMode = 'local';
@@ -41,6 +46,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let clipboardFiles = [];
     let clipboardAction = null; 
     let pendingCreateType = null;
+    let confirmResolve = null;
     let fileAssociations = {};
 
     let appScale = 1.0;
@@ -173,6 +179,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         inputModal.style.display = 'flex';
         inputField.focus();
     }
+
+    function showConfirmPrompt(message) {
+        return new Promise((resolve) => {
+            confirmText.textContent = message;
+            confirmModal.style.display = 'flex';
+            confirmYes.focus();
+            confirmResolve = resolve;
+        });
+    }
+
+    confirmYes.addEventListener('click', () => {
+        confirmModal.style.display = 'none';
+        if (confirmResolve) confirmResolve(true);
+        confirmResolve = null;
+    });
+
+    confirmNo.addEventListener('click', () => {
+        confirmModal.style.display = 'none';
+        if (confirmResolve) confirmResolve(false);
+        confirmResolve = null;
+    });
 
     inputCancel.addEventListener('click', () => {
         inputModal.style.display = 'none';
@@ -552,7 +579,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     showAlert("Schowek jest pusty!");
                 }
             } else if (action === 'delete') {
-                if (confirmDelete && !confirm(`Czy na pewno chcesz usunac wybrane elementy (${targetFiles.length})?`)) return;
+                if (confirmDelete) {
+                    const isConfirmed = await showConfirmPrompt(`Czy na pewno chcesz usunac te elementy (${targetFiles.length})?`);
+                    if (!isConfirmed) return;
+                }
                 await window.go.main.App.FileAction('delete', targetFiles, "");
                 selectedFiles.clear();
                 loadRangerView(currentDir);
@@ -603,6 +633,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         if (inputModal.style.display === 'flex') return; 
+        if (confirmModal.style.display === 'flex') {
+            if (e.key === 'Escape') confirmNo.click();
+            return;
+        }
 
         if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
         
@@ -618,7 +652,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 selectedIndex--;
                 loadRangerView(currentDir);
             }
-        } else if (e.key === 'Enter') {
+        } else if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             const file = currentFiles[selectedIndex];
             if (file && file.isDir) {
@@ -818,9 +852,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <div class="shortcut-item"><span>Wklej:</span> <input type="text" id="sc-paste" class="shortcut-input" value="${shortcuts.paste}"></div>
                             <div class="shortcut-item"><span>Usun:</span> <input type="text" id="sc-delete" class="shortcut-input" value="${shortcuts.delete}"></div>
                             <div class="shortcut-item"><span>Nowy Plik:</span> <input type="text" id="sc-newFile" class="shortcut-input" value="${shortcuts.newFile}"></div>
-                            <div class="shortcut-item"><span>Nowy Folder (wymaga Shift+):</span> <input type="text" id="sc-newDir" class="shortcut-input" value="${shortcuts.newDir}"></div>
+                            <div class="shortcut-item"><span>Nowy Folder (Shift+):</span> <input type="text" id="sc-newDir" class="shortcut-input" value="${shortcuts.newDir}"></div>
                             <div class="shortcut-item"><span>Terminal:</span> <input type="text" id="sc-terminal" class="shortcut-input" value="${shortcuts.terminal}"></div>
-                            <div class="shortcut-item"><span>Spakuj (wymaga Shift+):</span> <input type="text" id="sc-archive" class="shortcut-input" value="${shortcuts.archive}"></div>
+                            <div class="shortcut-item"><span>Spakuj (Shift+):</span> <input type="text" id="sc-archive" class="shortcut-input" value="${shortcuts.archive}"></div>
                             <div class="shortcut-item"><span>Rozpakuj:</span> <input type="text" id="sc-unzip" class="shortcut-input" value="${shortcuts.unzip}"></div>
                             <div class="shortcut-item"><span>Dual Pane (wkrótce):</span> <input type="text" id="sc-dualPane" class="shortcut-input" value="${shortcuts.dualPane}"></div>
                             <button class="btn primary" id="save-shortcuts-btn" style="width: 250px; margin-top: 10px;">Zapisz Skroty</button>

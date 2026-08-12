@@ -2,6 +2,11 @@
 
 All notable changes to fileDocker are documented in this file.
 
+## [alpha2.1] - 2026-08-12
+
+### Changed
+- **Changed alert window**: changed alert window from default webview to custom-made window that matches app theme.
+
 ## [alpha2] - 2026-08-12
 
 ### Added

@@ -63,6 +63,7 @@
         </ul>
     </div>
 
+    <!-- Ostrzezenia -->
     <div id="custom-alert" class="alert-overlay" style="display: none;">
         <div class="alert-box">
             <p id="alert-text"></p>
@@ -70,6 +71,7 @@
         </div>
     </div>
 
+    <!-- Wpisywanie danych -->
     <div id="input-modal" class="alert-overlay" style="display: none;">
         <div class="alert-box">
             <p id="input-text"></p>
@@ -82,6 +84,17 @@
             <div style="display: flex; gap: 1rem; justify-content: center;">
                 <button id="input-ok" class="btn primary">Utworz</button>
                 <button id="input-cancel" class="btn">Anuluj</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NOWY: Modal do potwierdzania operacji -->
+    <div id="confirm-modal" class="alert-overlay" style="display: none;">
+        <div class="alert-box">
+            <p id="confirm-text"></p>
+            <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem;">
+                <button id="confirm-yes" class="btn danger" style="background-color: #ff5555; color: white;">Tak, usun</button>
+                <button id="confirm-no" class="btn primary">Anuluj</button>
             </div>
         </div>
     </div>
