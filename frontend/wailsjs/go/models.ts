@@ -9,6 +9,8 @@ export namespace main {
 	    defaultPath: string;
 	    confirmDelete: boolean;
 	    customTerminal: string;
+	    cacheCleanupDays: number;
+	    projectsPath: string;
 	    shortcuts: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
@@ -25,6 +27,8 @@ export namespace main {
 	        this.defaultPath = source["defaultPath"];
 	        this.confirmDelete = source["confirmDelete"];
 	        this.customTerminal = source["customTerminal"];
+	        this.cacheCleanupDays = source["cacheCleanupDays"];
+	        this.projectsPath = source["projectsPath"];
 	        this.shortcuts = source["shortcuts"];
 	    }
 	}
@@ -44,6 +48,54 @@ export namespace main {
 	        this.isDir = source["isDir"];
 	        this.path = source["path"];
 	        this.id = source["id"];
+	    }
+	}
+	export class GitCommit {
+	    hash: string;
+	    message: string;
+	    date: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new GitCommit(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.hash = source["hash"];
+	        this.message = source["message"];
+	        this.date = source["date"];
+	    }
+	}
+	export class GitRepo {
+	    name: string;
+	    path: string;
+	    branch: string;
+	    status: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new GitRepo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.path = source["path"];
+	        this.branch = source["branch"];
+	        this.status = source["status"];
+	    }
+	}
+	export class NetworkDevice {
+	    ip: string;
+	    type: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new NetworkDevice(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ip = source["ip"];
+	        this.type = source["type"];
 	    }
 	}
 	export class RangerState {
@@ -79,6 +131,24 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+	export class RemoteRepo {
+	    name: string;
+	    fullName: string;
+	    description: string;
+	    cloneUrl: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RemoteRepo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.fullName = source["fullName"];
+	        this.description = source["description"];
+	        this.cloneUrl = source["cloneUrl"];
+	    }
 	}
 
 }

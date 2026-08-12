@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const contextMenu = document.getElementById('context-menu');
     const driveSelector = document.getElementById('drive-selector');
     const settingsBtn = document.getElementById('settings-btn');
+    const driveLogoutBtn = document.getElementById('drive-logout-btn');
     const fileOpenBar = document.getElementById('file-open-bar');
     const customAppInput = document.getElementById('custom-app-input');
     const btnOpenFile = document.getElementById('btn-open-file');
@@ -48,6 +49,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     let pendingCreateType = null;
     let confirmResolve = null;
     let fileAssociations = {};
+    
+    let cloneUrlCache = "";
+    let cloneBranchCache = "";
 
     let appScale = 1.0;
     let showHidden = false;
@@ -57,9 +61,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     let defaultPath = "";
     let confirmDelete = true;
     let customTerminal = "";
+    let cacheCleanupDays = 7;
+    let projectsPath = "";
     let shortcuts = {
         copy: "c", cut: "x", paste: "v", delete: "Delete",
-        newFile: "n", newDir: "n", terminal: "t", mark: "z", archive: "p", unzip: "u", dualPane: "d"
+        newFile: "n", newDir: "n", terminal: "t", mark: "z", archive: "p", unzip: "u", dualPane: "d", download: "s"
     };
 
     function formatSc(key, needsShift) {
@@ -69,21 +75,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function updateShortcutUI() {
         const scBar = document.querySelector('.bottom-shortcuts');
-        if (scBar) {
+        if (!scBar) return;
+
+        if (currentMode === 'local') {
             scBar.innerHTML = `
                 <span>${formatSc(shortcuts.mark, false)} Zaznacz plik</span>
-                <span>${formatSc(shortcuts.copy, false)} Kopiuj zaznaczone</span>
+                <span>${formatSc(shortcuts.copy, false)} Kopiuj</span>
                 <span>${formatSc(shortcuts.cut, false)} Wytnij</span>
                 <span>${formatSc(shortcuts.paste, false)} Wklej</span>
                 <span>${formatSc(shortcuts.delete, false)} Usun</span>
                 <span>${formatSc(shortcuts.newFile, false)} Nowy plik</span>
                 <span>${formatSc(shortcuts.newDir, true)} Nowy folder</span>
                 <span>${formatSc(shortcuts.terminal, false)} Terminal</span>
-                <span>${formatSc(shortcuts.archive, true)} Spakuj zaznaczone</span>
+                <span>${formatSc(shortcuts.archive, true)} Spakuj</span>
                 <span>${formatSc(shortcuts.unzip, false)} Rozpakuj</span>
-                <span>${formatSc(shortcuts.dualPane, false)} Dual Pane</span>
                 <span>[Enter] Otworz</span>
             `;
+        } else if (currentMode === 'cloud-browse' || currentMode === 'cloud') {
+            scBar.innerHTML = `
+                <span>${formatSc(shortcuts.mark, false)} Zaznacz plik</span>
+                <span>${formatSc(shortcuts.download, false)} Pobierz na dysk</span>
+                <span>${formatSc(shortcuts.delete, false)} Usun z Dysku</span>
+                <span>[Enter] Otworz (Pobiera do Cache)</span>
+            `;
+        } else {
+            scBar.innerHTML = "";
         }
     }
 
@@ -98,6 +114,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             defaultPath = s.defaultPath;
             confirmDelete = s.confirmDelete;
             customTerminal = s.customTerminal || "";
+            cacheCleanupDays = s.cacheCleanupDays !== undefined ? s.cacheCleanupDays : 7;
+            projectsPath = s.projectsPath || "";
             if (s.shortcuts) shortcuts = s.shortcuts;
 
             if (defaultPath !== "" && localDirState === "") {
@@ -106,9 +124,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             applyTheme();
             document.documentElement.style.setProperty('--app-scale', appScale);
             updateShortcutUI();
-        } catch(err) {
-            console.warn("Nie udalo sie zaladowac ustawien", err);
-        }
+        } catch(err) {}
     }
 
     async function saveSettings() {
@@ -116,7 +132,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             await window.go.main.App.SaveSettings({
                 appScale: appScale, showHidden: showHidden, showExtensions: showExtensions,
                 foldersFirst: foldersFirst, isDarkTheme: isDarkTheme, defaultPath: defaultPath,
-                confirmDelete: confirmDelete, customTerminal: customTerminal, shortcuts: shortcuts
+                confirmDelete: confirmDelete, customTerminal: customTerminal, cacheCleanupDays: cacheCleanupDays,
+                projectsPath: projectsPath, shortcuts: shortcuts
             });
             updateShortcutUI();
         } catch(err) {}
@@ -154,6 +171,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         e.target.blur();
     });
+
+    if (driveLogoutBtn) {
+        driveLogoutBtn.addEventListener('click', async () => {
+            try {
+                await window.go.main.App.LogoutGoogle();
+                driveHistory = ["root"];
+                cloudDirState = "root";
+                updateView('cloud');
+                showAlert("Wylogowano.");
+            } catch (err) {
+                showAlert(err);
+            }
+        });
+    }
 
     function showAlert(message) {
         alertText.textContent = message;
@@ -208,8 +239,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     inputOk.addEventListener('click', async () => {
-        const name = inputField.value.trim();
-        if (name && currentDir && pendingCreateType) {
+        const val = inputField.value.trim();
+        if (pendingCreateType === 'clone' && val) {
+            inputModal.style.display = 'none';
+            pendingCreateType = null;
+            showAlert("Trwa klonowanie...");
+            try {
+                await window.go.main.App.CloneRemoteRepo(cloneUrlCache, cloneBranchCache, val);
+                showAlert("Pobrano pomyslnie.");
+            } catch(err) {
+                showAlert(err);
+            }
+            return;
+        }
+
+        if (val && currentDir && pendingCreateType) {
             try {
                 if (pendingCreateType === 'archive') {
                     const format = archiveTypeSelect.value;
@@ -218,11 +262,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const currentF = currentFiles[selectedIndex];
                         if (currentF) filesToZip.push(currentF.path);
                     }
-                    await window.go.main.App.CreateArchive(filesToZip, name, format);
+                    await window.go.main.App.CreateArchive(filesToZip, val, format);
                     selectedFiles.clear();
-                    showAlert(`Utworzono archiwum: ${name}.${format}`);
+                    showAlert(`Utworzono: ${val}.${format}`);
                 } else {
-                    const newPath = currentDir + (currentDir.endsWith("\\") || currentDir.endsWith("/") ? "" : (osType === 'windows' ? "\\" : "/")) + name;
+                    const newPath = currentDir + (currentDir.endsWith("\\") || currentDir.endsWith("/") ? "" : (osType === 'windows' ? "\\" : "/")) + val;
                     const isDir = pendingCreateType === 'dir';
                     await window.go.main.App.CreateItem(newPath, isDir);
                 }
@@ -319,13 +363,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function updateFileOpenBar(file) {
-        if (currentMode === 'local' && file && !file.isDir) {
-            fileOpenBar.style.display = 'flex';
-            let ext = "";
-            if (file.name.includes('.')) {
-                ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+        if (currentMode === 'local' || currentMode === 'cloud-browse') {
+            if (file && !file.isDir) {
+                fileOpenBar.style.display = 'flex';
+                let ext = "";
+                if (file.name.includes('.')) {
+                    ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+                }
+                customAppInput.value = fileAssociations[ext] || "";
+            } else {
+                fileOpenBar.style.display = 'none';
             }
-            customAppInput.value = fileAssociations[ext] || "";
         } else {
             fileOpenBar.style.display = 'none';
         }
@@ -390,7 +438,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         html += `<div class="ranger-col" id="parent-col">`;
         if (parentFilesList) {
             html += parentFilesList.map((f, idx) => {
-                const isSelected = f.path === currentDir ? "selected" : "";
+                const isSelected = f.path === currentDir || f.id === currentDir ? "selected" : "";
                 const typeClass = f.isDir ? "dir" : "file";
                 return `<div class="ranger-item ${typeClass} ${isSelected}" data-idx="${idx}">${getDisplayName(f)}</div>`;
             }).join('');
@@ -400,7 +448,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         html += `<div class="ranger-col" id="current-col">`;
         html += currentFilesList.map((f, idx) => {
             const isSelected = idx === selectedIndex ? "selected" : "";
-            const isMarked = selectedFiles.has(f.path) ? "marked" : "";
+            const isMarked = selectedFiles.has(f.path) || selectedFiles.has(f.id) ? "marked" : "";
             const typeClass = f.isDir ? "dir" : "file";
             return `<div class="ranger-item ${typeClass} ${isSelected} ${isMarked}" data-idx="${idx}">${getDisplayName(f)}</div>`;
         }).join('');
@@ -437,7 +485,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     selectedFiles.clear();
                     handleForwardNavigation(currentFilesList[idx]);
                 } else {
-                    handleFileOpen(currentFilesList[idx]);
+                    if(currentMode === 'local') handleFileOpen(currentFilesList[idx]);
+                    else handleCloudOpen(currentFilesList[idx]);
                 }
             });
             item.addEventListener('contextmenu', (e) => {
@@ -505,10 +554,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     
                     previewCol.innerHTML = htmlContent;
                 } catch (err) {
-                    previewCol.innerHTML = `<div class="preview-box">Nie mozna wczytac podgladu</div>`;
+                    previewCol.innerHTML = `<div class="preview-box">Brak podgladu</div>`;
                 }
             } else {
-                previewCol.innerHTML = `<div class="preview-box">Podglad niedostepny</div>`;
+                previewCol.innerHTML = `<div class="preview-box">Podglad zdalny (nacisnij Enter aby pobrac/otworzyc)</div>`;
             }
         }
     }
@@ -524,11 +573,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     document.getElementById('cm-new-file').addEventListener('click', () => {
-        if (currentMode !== 'local') return showAlert("Opcja dostepna tylko lokalnie");
+        if (currentMode !== 'local') return showAlert("Tylko lokalnie");
         showInputPrompt("Podaj nazwe nowego pliku:", "file");
     });
     document.getElementById('cm-new-dir').addEventListener('click', () => {
-        if (currentMode !== 'local') return showAlert("Opcja dostepna tylko lokalnie");
+        if (currentMode !== 'local') return showAlert("Tylko lokalnie");
         showInputPrompt("Podaj nazwe nowego folderu:", "dir");
     });
     document.getElementById('cm-copy').addEventListener('click', () => {
@@ -549,24 +598,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     async function handleAction(action) {
-        if (currentMode !== 'local') return;
-        
         let targetFiles = Array.from(selectedFiles);
         if (targetFiles.length === 0) {
             const file = currentFiles[selectedIndex];
-            if (file) targetFiles.push(file.path);
+            if (file) targetFiles.push(currentMode === 'local' ? file.path : file.id);
         }
-
         if (targetFiles.length === 0 && action !== 'paste') return;
         
         try {
             if (action === 'copy' || action === 'cut') {
+                if (currentMode !== 'local') return showAlert("Tylko lokalnie.");
                 clipboardFiles = targetFiles;
                 clipboardAction = action;
-                showAlert(`Skopiowano/Wycieto ${targetFiles.length} elementow.`);
+                showAlert(`Zapisano.`);
                 selectedFiles.clear();
                 loadRangerView(currentDir);
             } else if (action === 'paste') {
+                if (currentMode !== 'local') return showAlert("Tylko lokalnie.");
                 if (clipboardFiles.length > 0 && clipboardAction) {
                     await window.go.main.App.FileAction(clipboardAction, clipboardFiles, currentDir);
                     if (clipboardAction === 'cut') {
@@ -576,14 +624,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                     selectedFiles.clear();
                     loadRangerView(currentDir);
                 } else {
-                    showAlert("Schowek jest pusty!");
+                    showAlert("Schowek pusty.");
                 }
             } else if (action === 'delete') {
                 if (confirmDelete) {
-                    const isConfirmed = await showConfirmPrompt(`Czy na pewno chcesz usunac te elementy (${targetFiles.length})?`);
+                    const isConfirmed = await showConfirmPrompt(`Usunac?`);
                     if (!isConfirmed) return;
                 }
-                await window.go.main.App.FileAction('delete', targetFiles, "");
+                
+                if (currentMode === 'local') {
+                    await window.go.main.App.FileAction('delete', targetFiles, "");
+                } else if (currentMode === 'cloud-browse') {
+                    for (let id of targetFiles) {
+                        await window.go.main.App.DeleteDriveFile(id);
+                    }
+                }
                 selectedFiles.clear();
                 loadRangerView(currentDir);
             }
@@ -592,11 +647,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    async function handleCloudDownload() {
+        let targetFiles = Array.from(selectedFiles);
+        if (targetFiles.length === 0) {
+            const file = currentFiles[selectedIndex];
+            if (file && !file.isDir) targetFiles.push(file.id);
+        }
+        if (targetFiles.length === 0) return;
+
+        try {
+            showAlert(`Pobieranie...`);
+            for (let id of targetFiles) {
+                const fileObj = currentFiles.find(f => f.id === id);
+                let name = fileObj ? fileObj.name : "pobrany_plik";
+                await window.go.main.App.DownloadFromDrive(id, name, "DOWNLOADS");
+            }
+            showAlert(`Zakonczono.`);
+            selectedFiles.clear();
+            loadRangerView(currentDir);
+        } catch(err) {
+            showAlert(err);
+        }
+    }
+
     function handleForwardNavigation(file, pathToSelect = null) {
         if (file && file.isDir) {
             if (currentMode === 'cloud-browse') driveHistory.push(file.id);
             selectedFiles.clear();
-            loadRangerView(file.path, pathToSelect);
+            loadRangerView(currentMode === 'local' ? file.path : file.id, pathToSelect);
         }
     }
 
@@ -622,9 +700,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    async function handleCloudOpen(file) {
+        try {
+            showAlert(`Pobieranie do cache...`);
+            const downloadedPath = await window.go.main.App.DownloadFromDrive(file.id, file.name, "CACHE");
+            document.getElementById('custom-alert').style.display = 'none';
+            const appName = customAppInput.value.trim();
+            await window.go.main.App.OpenFileCustom(downloadedPath, appName);
+        } catch (err) {
+            showAlert(err);
+        }
+    }
+
     btnOpenFile.addEventListener('click', () => {
         const file = currentFiles[selectedIndex];
-        if (file && !file.isDir) handleFileOpen(file);
+        if (file && !file.isDir) {
+            if (currentMode === 'local') handleFileOpen(file);
+            else handleCloudOpen(file);
+        }
     });
 
     window.addEventListener('keydown', async (e) => {
@@ -636,6 +729,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (confirmModal.style.display === 'flex') {
             if (e.key === 'Escape') confirmNo.click();
             return;
+        }
+
+        if (e.ctrlKey && !e.shiftKey && !e.altKey) {
+            if (e.key === '1') { e.preventDefault(); document.querySelector('[data-view="local"]')?.click(); return; }
+            if (e.key === '2') { e.preventDefault(); document.querySelector('[data-view="cloud"]')?.click(); return; }
+            if (e.key === '3') { e.preventDefault(); document.querySelector('[data-view="git"]')?.click(); return; }
+            if (e.key === '4') { e.preventDefault(); document.querySelector('[data-view="cleaner"]')?.click(); return; }
+            if (e.key === '5' || e.key === ',') { e.preventDefault(); document.getElementById('settings-btn')?.click(); return; }
+        }
+
+        if (e.key === 'Escape') {
+            if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT')) {
+                document.activeElement.blur();
+                return;
+            }
         }
 
         if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
@@ -658,7 +766,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (file && file.isDir) {
                 handleForwardNavigation(file);
             } else if (file && !file.isDir) {
-                handleFileOpen(file);
+                if (currentMode === 'local') handleFileOpen(file);
+                else handleCloudOpen(file);
             }
         } else if (e.key === 'ArrowRight') {
             e.preventDefault();
@@ -673,14 +782,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             const file = currentFiles[selectedIndex];
             if (file) {
-                if (selectedFiles.has(file.path)) {
-                    selectedFiles.delete(file.path);
+                const targetKey = currentMode === 'local' ? file.path : file.id;
+                if (selectedFiles.has(targetKey)) {
+                    selectedFiles.delete(targetKey);
                 } else {
-                    selectedFiles.add(file.path);
+                    selectedFiles.add(targetKey);
                 }
-                if (selectedIndex < currentFiles.length - 1) {
-                    selectedIndex++;
-                }
+                if (selectedIndex < currentFiles.length - 1) selectedIndex++;
                 loadRangerView(currentDir);
             }
         } else if (e.key.toLowerCase() === shortcuts.copy.toLowerCase() && !e.ctrlKey) {
@@ -717,9 +825,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     loadRangerView(currentDir);
                 } catch(err) { showAlert(err); }
             }
+        } else if (e.key.toLowerCase() === shortcuts.download.toLowerCase() && !e.ctrlKey) {
+            e.preventDefault();
+            if (currentMode === 'cloud-browse') handleCloudDownload();
         } else if (e.key.toLowerCase() === shortcuts.dualPane.toLowerCase()) {
             e.preventDefault();
-            showAlert("Opcja Dual Pane jest zaplanowana do aktywacji w kolejnej wersji, aby zapewnic stabilnosc interfejsu Ranger.");
+            showAlert("Opcja wkrotce.");
         }
     });
 
@@ -727,7 +838,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (osType === 'windows') {
             driveSelector.style.display = view === 'local' ? 'block' : 'none';
         }
+        if (driveLogoutBtn) {
+            driveLogoutBtn.style.display = (view === 'cloud-browse') ? 'inline-block' : 'none';
+        }
         
+        updateShortcutUI();
+
         switch(view) {
             case 'local':
                 if (localDirState === "") {
@@ -742,6 +858,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const isAuth = await window.go.main.App.IsDriveAuthenticated();
                     if (isAuth) {
                         currentMode = 'cloud-browse';
+                        updateShortcutUI();
+                        if (driveLogoutBtn) driveLogoutBtn.style.display = 'inline-block';
                         if (driveHistory.length === 0) driveHistory = ["root"];
                         await loadRangerView(cloudDirState);
                         break;
@@ -751,10 +869,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 viewTitle.textContent = 'Google Drive';
                 fileArea.innerHTML = `
                     <div class="standard-view">
-                        <h3>Konfiguracja klienta Google</h3>
+                        <h3>Konfiguracja</h3>
                         <input type="text" id="g-client-id" class="input-field" placeholder="Client ID">
                         <input type="password" id="g-client-secret" class="input-field" placeholder="Client Secret">
-                        <button class="btn primary" id="auth-btn">Zaloguj do Google</button>
+                        <button class="btn primary" id="auth-btn">Zaloguj</button>
                     </div>
                 `;
                 setTimeout(() => {
@@ -764,6 +882,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         try {
                             await window.go.main.App.LoginGoogle(clientId, clientSecret);
                             currentMode = 'cloud-browse';
+                            updateShortcutUI();
+                            if (driveLogoutBtn) driveLogoutBtn.style.display = 'inline-block';
                             driveHistory = ["root"];
                             cloudDirState = "root";
                             await loadRangerView(cloudDirState);
@@ -778,24 +898,216 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (driveHistory.length === 0) driveHistory = ["root"];
                 await loadRangerView(cloudDirState);
                 break;
-            case 'network':
+            case 'git':
                 fileOpenBar.style.display = 'none';
-                viewTitle.textContent = 'Siec SMB/FTP';
+                viewTitle.textContent = 'Projekty Git';
                 fileArea.innerHTML = `
-                    <div class="standard-view">
-                        <input type="text" id="smb-address" class="input-field" placeholder="Adres IP / Host">
-                        <input type="text" id="smb-user" class="input-field" placeholder="Uzytkownik">
-                        <input type="password" id="smb-pass" class="input-field" placeholder="Haslo">
-                        <button class="btn primary" id="connect-btn">Polacz</button>
+                    <div class="standard-view" style="padding: 20px; display: flex; gap: 20px; height: 100%; box-sizing: border-box;">
+                        <div style="flex: 1; border-right: 1px solid var(--border); padding-right: 20px; overflow-y: auto; min-width: 0;">
+                            <h3 style="margin-top:0; color: var(--accent);">Lokalne Repozytoria</h3>
+                            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                                <input type="text" id="git-path-input" class="input-field" style="margin-bottom: 0;" placeholder="Sciezka" value="${projectsPath}">
+                                <button class="btn primary" id="git-scan-btn">Skanuj</button>
+                            </div>
+                            <div id="git-local-results" style="display: flex; flex-direction: column; gap: 5px;"></div>
+
+                            <h3 style="margin-top: 20px; color: var(--accent);">Wyszukaj na GitHub</h3>
+                            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                                <input type="text" id="git-search-input" class="input-field" style="margin-bottom: 0;" placeholder="Nazwa repo lub uzytkownika...">
+                                <button class="btn primary" id="git-search-btn">Szukaj</button>
+                            </div>
+                            <div id="git-remote-results" style="display: flex; flex-direction: column; gap: 5px;"></div>
+                        </div>
+                        <div style="flex: 1; overflow-y: auto; min-width: 0;" id="git-details-panel">
+                            <div style="color: var(--text-main); opacity: 0.7;">Wybierz repozytorium z lewej strony...</div>
+                        </div>
                     </div>
                 `;
+                setTimeout(() => {
+                    const scanBtn = document.getElementById('git-scan-btn');
+                    const localResDiv = document.getElementById('git-local-results');
+                    const pathInput = document.getElementById('git-path-input');
+                    const searchBtn = document.getElementById('git-search-btn');
+                    const searchInput = document.getElementById('git-search-input');
+                    const remoteResDiv = document.getElementById('git-remote-results');
+                    const detailsPanel = document.getElementById('git-details-panel');
+
+                    scanBtn.addEventListener('click', async () => {
+                        scanBtn.disabled = true;
+                        localResDiv.innerHTML = `<span style="color: var(--accent);">Skanowanie...</span>`;
+                        projectsPath = pathInput.value.trim();
+                        saveSettings();
+
+                        try {
+                            const repos = await window.go.main.App.ScanGitRepos(projectsPath);
+                            localResDiv.innerHTML = "";
+                            if (!repos || repos.length === 0) {
+                                localResDiv.innerHTML = "<span>Brak.</span>";
+                            } else {
+                                repos.forEach(repo => {
+                                    const d = document.createElement('div');
+                                    d.style.cssText = "padding: 12px; border: 1px solid var(--border); background: var(--bg-panel); border-left: 4px solid var(--accent); cursor: pointer; display: flex; flex-direction: column; border-radius: 4px; overflow: hidden;";
+                                    
+                                    const statusColor = repo.status === "czyste" ? "var(--dir-color)" : "#ff79c6";
+                                    
+                                    d.innerHTML = `
+                                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                                            <div style="font-weight: bold; font-size: 1.1em; color: var(--text-main); flex: 1;">${repo.name}</div>
+                                            <div style="font-weight: bold; flex-shrink: 0;">[${repo.branch}]</div>
+                                        </div>
+                                        <div style="font-size: 0.85em; opacity: 0.7; margin-top: 4px;">${repo.path}</div>
+                                        <div style="color: ${statusColor}; font-size: 0.9em; margin-top: 4px;">${repo.status}</div>
+                                    `;
+                                    d.addEventListener('click', async () => {
+                                        detailsPanel.innerHTML = `<span style="color: var(--accent);">Wczytywanie szczegolow...</span>`;
+                                        try {
+                                            const branches = await window.go.main.App.GetLocalGitBranches(repo.path);
+                                            const commits = await window.go.main.App.GetGitHistory(repo.path);
+                                            
+                                            detailsPanel.innerHTML = `<h3 style="margin-top:0;">Szczegoly: ${repo.name}</h3>`;
+                                            
+                                            const branchHeader = document.createElement('h4');
+                                            branchHeader.style.color = "var(--accent)";
+                                            branchHeader.style.margin = "0 0 10px 0";
+                                            branchHeader.textContent = "Galezie (Branches):";
+                                            detailsPanel.appendChild(branchHeader);
+                                            
+                                            const branchContainer = document.createElement('div');
+                                            branchContainer.style.cssText = "display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px;";
+                                            if(branches && branches.length > 0) {
+                                                branches.forEach(b => {
+                                                    const isCurrent = b === repo.branch;
+                                                    const btn = document.createElement('button');
+                                                    btn.className = isCurrent ? "btn primary" : "btn";
+                                                    btn.style.padding = "4px 8px";
+                                                    btn.textContent = b;
+                                                    if(!isCurrent) {
+                                                        btn.addEventListener('click', async () => {
+                                                            const ok = await showConfirmPrompt(`Przelaczyc na galez: ${b}?`);
+                                                            if(ok) {
+                                                                try {
+                                                                    await window.go.main.App.CheckoutGitCommit(repo.path, b);
+                                                                    showAlert("Zmieniono galez.");
+                                                                    scanBtn.click();
+                                                                } catch(err) {
+                                                                    showAlert(err);
+                                                                }
+                                                            }
+                                                        });
+                                                    }
+                                                    branchContainer.appendChild(btn);
+                                                });
+                                            } else {
+                                                branchContainer.innerHTML = "<span style='opacity: 0.5;'>Brak innych galezi.</span>";
+                                            }
+                                            detailsPanel.appendChild(branchContainer);
+
+                                            const commitHeader = document.createElement('h4');
+                                            commitHeader.style.color = "var(--accent)";
+                                            commitHeader.style.margin = "0 0 10px 0";
+                                            commitHeader.textContent = "Historia commitow:";
+                                            detailsPanel.appendChild(commitHeader);
+                                            
+                                            if(!commits || commits.length === 0) {
+                                                const noCommits = document.createElement('div');
+                                                noCommits.textContent = "Brak commitow.";
+                                                detailsPanel.appendChild(noCommits);
+                                            } else {
+                                                commits.forEach(c => {
+                                                    const cd = document.createElement('div');
+                                                    cd.style.cssText = "padding: 8px; border-bottom: 1px solid var(--border); cursor: pointer; display: flex; flex-direction: column; overflow: hidden;";
+                                                    cd.innerHTML = `
+                                                        <div style="width: 100%;">
+                                                            <span style="color: var(--accent);">${c.hash}</span> - ${c.message}
+                                                        </div>
+                                                        <div style="opacity:0.5; font-size: 0.8em; margin-top: 4px;">(${c.date})</div>
+                                                    `;
+                                                    cd.addEventListener('click', async () => {
+                                                        const ok = await showConfirmPrompt(`Przywrocic (checkout) do: ${c.hash}?`);
+                                                        if(ok) {
+                                                            try {
+                                                                await window.go.main.App.CheckoutGitCommit(repo.path, c.hash);
+                                                                showAlert("Zmieniono wersje.");
+                                                                scanBtn.click();
+                                                            } catch(err) {
+                                                                showAlert(err);
+                                                            }
+                                                        }
+                                                    });
+                                                    detailsPanel.appendChild(cd);
+                                                });
+                                            }
+                                        } catch(err) {
+                                            detailsPanel.innerHTML = `Blad: ${err}`;
+                                        }
+                                    });
+                                    localResDiv.appendChild(d);
+                                });
+                            }
+                        } catch(err) {
+                            localResDiv.innerHTML = `Blad: ${err}`;
+                        }
+                        scanBtn.disabled = false;
+                    });
+
+                    searchBtn.addEventListener('click', async () => {
+                        searchBtn.disabled = true;
+                        remoteResDiv.innerHTML = `<span style="color: var(--accent);">Szukanie...</span>`;
+                        try {
+                            const repos = await window.go.main.App.SearchGitHub(searchInput.value.trim());
+                            remoteResDiv.innerHTML = "";
+                            if (!repos || repos.length === 0) {
+                                remoteResDiv.innerHTML = "<span>Brak wynikow.</span>";
+                            } else {
+                                repos.forEach(repo => {
+                                    const d = document.createElement('div');
+                                    d.style.cssText = "padding: 8px; border: 1px solid var(--border); background: var(--bg-panel); cursor: pointer; display: flex; flex-direction: column; overflow: hidden;";
+                                    d.innerHTML = `
+                                        <div style="font-weight: bold; color: var(--text-main);">${repo.fullName}</div>
+                                        <div style="font-size: 0.85em; opacity: 0.7; margin-top: 4px;">${repo.description || 'Brak opisu'}</div>
+                                    `;
+                                    d.addEventListener('click', async () => {
+                                        detailsPanel.innerHTML = `<span style="color: var(--accent);">Wczytywanie wersji...</span>`;
+                                        try {
+                                            const branches = await window.go.main.App.GetGitHubBranches(repo.fullName);
+                                            detailsPanel.innerHTML = `<h3 style="margin-top:0;">Pobierz: ${repo.name}</h3>`;
+                                            if(!branches) {
+                                                detailsPanel.innerHTML += "Brak galezi.";
+                                                return;
+                                            }
+                                            branches.forEach(b => {
+                                                const cd = document.createElement('div');
+                                                cd.style.cssText = "padding: 8px; border-bottom: 1px solid var(--border); cursor: pointer;";
+                                                cd.innerHTML = `Galez: <span style="color: var(--accent); font-weight: bold;">${b}</span>`;
+                                                cd.addEventListener('click', () => {
+                                                    cloneUrlCache = repo.cloneUrl;
+                                                    cloneBranchCache = b;
+                                                    showInputPrompt(`Podaj lokalny folder docelowy dla pobrania:`, 'clone');
+                                                });
+                                                detailsPanel.appendChild(cd);
+                                            });
+                                        } catch(err) {
+                                            detailsPanel.innerHTML = `Blad: ${err}`;
+                                        }
+                                    });
+                                    remoteResDiv.appendChild(d);
+                                });
+                            }
+                        } catch(err) {
+                            remoteResDiv.innerHTML = `Blad: ${err}`;
+                        }
+                        searchBtn.disabled = false;
+                    });
+                }, 0);
                 break;
             case 'cleaner':
                 fileOpenBar.style.display = 'none';
                 viewTitle.textContent = 'Oczyszczanie dysku';
                 fileArea.innerHTML = `
                     <div class="standard-view">
-                        <button class="btn primary" id="clean-btn">Rozpocznij czyszczenie</button>
+                        <button class="btn primary" id="clean-btn">Pliki tymczasowe systemu</button>
+                        <br><br>
+                        <button class="btn primary" id="clean-cache-btn">Cache Google Drive</button>
                     </div>
                 `;
                 setTimeout(() => {
@@ -807,63 +1119,82 @@ document.addEventListener('DOMContentLoaded', async () => {
                             showAlert(err);
                         }
                     });
+                    document.getElementById('clean-cache-btn').addEventListener('click', async () => {
+                        try {
+                            const result = await window.go.main.App.CleanAppCache();
+                            showAlert(result);
+                        } catch (err) {
+                            showAlert(err);
+                        }
+                    });
                 }, 0);
                 break;
             case 'settings':
                 fileOpenBar.style.display = 'none';
                 viewTitle.textContent = 'Ustawienia';
                 fileArea.innerHTML = `
-                    <div class="standard-view">
+                    <div class="standard-view" style="max-width: 800px; padding: 20px;">
                         <div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
-                            <button class="btn primary" id="settings-open-config">Otworz plik konfiguracyjny (JSON)</button>
-                            <button class="btn" id="settings-reload-config">Odswiez ustawienia z pliku</button>
+                            <button class="btn primary" id="settings-open-config">Otwórz plik konfiguracyjny (JSON)</button>
+                            <button class="btn" id="settings-reload-config">Odśwież z pliku</button>
                         </div>
                         
-                        <h3>Opcje wygladu</h3>
-                        <div style="margin-bottom: 1.5rem;">
-                            <label style="display: block; margin-bottom: 0.5rem; font-weight: bold;">
-                                Skala interfejsu: <span id="scale-val-display" style="color: var(--accent);">${appScale}x</span>
-                            </label>
-                            <input type="range" id="settings-scale-slider" min="0.5" max="2.0" step="0.1" value="${appScale}" style="width: 20rem; max-width: 100%;">
-                        </div>
-
-                        <h3>Opcje nawigacji i plikow</h3>
-                        <div style="margin-bottom: 1.5rem;">
-                            <label class="checkbox-container" style="margin-bottom: 1rem;">
-                                <input type="checkbox" id="settings-confirm-delete-cb">
-                                Pytaj o potwierdzenie przy usuwaniu
-                            </label>
-                            <label style="display: block; margin-bottom: 0.5rem; font-weight: bold;">
-                                Domyslny katalog startowy (zostaw puste dla domowego):
-                            </label>
-                            <input type="text" id="settings-default-path" class="input-field" value="${defaultPath}" placeholder="np. C:\\Users lub /home">
-                            
-                            <label style="display: block; margin-bottom: 0.5rem; font-weight: bold;">
-                                Domyslny terminal (zostaw puste dla systemowego):
-                            </label>
-                            <input type="text" id="settings-custom-terminal" class="input-field" value="${customTerminal}" placeholder="np. alacritty, kitty, wt">
-                        </div>
-
-                        <h3>Skroty Klawiszowe</h3>
-                        <div style="margin-bottom: 2rem; display: flex; flex-direction: column; gap: 0.5rem;">
-                            <div class="shortcut-item"><span>Zaznacz:</span> <input type="text" id="sc-mark" class="shortcut-input" value="${shortcuts.mark}"></div>
-                            <div class="shortcut-item"><span>Kopiuj:</span> <input type="text" id="sc-copy" class="shortcut-input" value="${shortcuts.copy}"></div>
-                            <div class="shortcut-item"><span>Wytnij:</span> <input type="text" id="sc-cut" class="shortcut-input" value="${shortcuts.cut}"></div>
-                            <div class="shortcut-item"><span>Wklej:</span> <input type="text" id="sc-paste" class="shortcut-input" value="${shortcuts.paste}"></div>
-                            <div class="shortcut-item"><span>Usun:</span> <input type="text" id="sc-delete" class="shortcut-input" value="${shortcuts.delete}"></div>
-                            <div class="shortcut-item"><span>Nowy Plik:</span> <input type="text" id="sc-newFile" class="shortcut-input" value="${shortcuts.newFile}"></div>
-                            <div class="shortcut-item"><span>Nowy Folder (Shift+):</span> <input type="text" id="sc-newDir" class="shortcut-input" value="${shortcuts.newDir}"></div>
-                            <div class="shortcut-item"><span>Terminal:</span> <input type="text" id="sc-terminal" class="shortcut-input" value="${shortcuts.terminal}"></div>
-                            <div class="shortcut-item"><span>Spakuj (Shift+):</span> <input type="text" id="sc-archive" class="shortcut-input" value="${shortcuts.archive}"></div>
-                            <div class="shortcut-item"><span>Rozpakuj:</span> <input type="text" id="sc-unzip" class="shortcut-input" value="${shortcuts.unzip}"></div>
-                            <div class="shortcut-item"><span>Dual Pane (wkrótce):</span> <input type="text" id="sc-dualPane" class="shortcut-input" value="${shortcuts.dualPane}"></div>
-                            <button class="btn primary" id="save-shortcuts-btn" style="width: 250px; margin-top: 10px;">Zapisz Skroty</button>
-                        </div>
-
-                        <h3>Powiazania plikow</h3>
+                        <h3 style="color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px;">Wygląd interfejsu</h3>
                         <div style="margin-bottom: 2rem;">
-                            <button class="btn primary" id="settings-open-json">Edytuj powiazania (JSON)</button>
-                            <button class="btn" id="settings-reload-json">Odswiez powiazania z pliku</button>
+                            <label style="display: block; margin-bottom: 8px; font-weight: bold;">
+                                Skala aplikacji: <span id="scale-val-display" style="color: var(--accent);">${appScale}x</span>
+                            </label>
+                            <input type="range" id="settings-scale-slider" min="0.5" max="2.0" step="0.1" value="${appScale}" style="width: 100%; max-width: 400px; cursor: pointer;">
+                        </div>
+
+                        <h3 style="color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px;">Opcje nawigacji i zachowania</h3>
+                        <div style="margin-bottom: 2rem; display: flex; flex-direction: column; gap: 1.5rem;">
+                            <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="settings-confirm-delete-cb"> 
+                                <span>Pytaj o potwierdzenie przed usunięciem elementów</span>
+                            </label>
+                            
+                            <div>
+                                <label style="display: block; margin-bottom: 4px; font-weight: bold;">Domyślny katalog startowy</label>
+                                <div style="font-size: 0.85em; opacity: 0.7; margin-bottom: 8px;">Zostaw puste, aby otwierać systemowy katalog domowy użytkownika.</div>
+                                <input type="text" id="settings-default-path" class="input-field" value="${defaultPath}" placeholder="np. C:\\Users\\... lub /home/..." style="width: 100%; max-width: 500px;">
+                            </div>
+                            
+                            <div>
+                                <label style="display: block; margin-bottom: 4px; font-weight: bold;">Niestandardowy emulator terminala</label>
+                                <div style="font-size: 0.85em; opacity: 0.7; margin-bottom: 8px;">Zostaw puste, aby używać domyślnego w systemie (cmd / Terminal / x-terminal-emulator).</div>
+                                <input type="text" id="settings-custom-terminal" class="input-field" value="${customTerminal}" placeholder="np. alacritty, kitty, wt" style="width: 100%; max-width: 500px;">
+                            </div>
+                            
+                            <div>
+                                <label style="display: block; margin-bottom: 4px; font-weight: bold;">Czas życia Cache (w dniach)</label>
+                                <div style="font-size: 0.85em; opacity: 0.7; margin-bottom: 8px;">Po ilu dniach aplikacja ma automatycznie czyścić pobrane pliki z Google Drive (0 = wyłączone).</div>
+                                <input type="number" id="settings-cache-days" class="input-field" value="${cacheCleanupDays}" min="0" max="365" style="width: 120px;">
+                            </div>
+                        </div>
+
+                        <h3 style="color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px;">Skróty klawiszowe</h3>
+                        <div style="margin-bottom: 2rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px;">
+                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Zaznacz:</span> <input type="text" id="sc-mark" class="shortcut-input" value="${shortcuts.mark}"></div>
+                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Kopiuj:</span> <input type="text" id="sc-copy" class="shortcut-input" value="${shortcuts.copy}"></div>
+                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Wytnij:</span> <input type="text" id="sc-cut" class="shortcut-input" value="${shortcuts.cut}"></div>
+                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Wklej:</span> <input type="text" id="sc-paste" class="shortcut-input" value="${shortcuts.paste}"></div>
+                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Usuń:</span> <input type="text" id="sc-delete" class="shortcut-input" value="${shortcuts.delete}"></div>
+                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Nowy Plik:</span> <input type="text" id="sc-newFile" class="shortcut-input" value="${shortcuts.newFile}"></div>
+                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Nowy Folder:</span> <input type="text" id="sc-newDir" class="shortcut-input" value="${shortcuts.newDir}"></div>
+                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Terminal:</span> <input type="text" id="sc-terminal" class="shortcut-input" value="${shortcuts.terminal}"></div>
+                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Spakuj:</span> <input type="text" id="sc-archive" class="shortcut-input" value="${shortcuts.archive}"></div>
+                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Rozpakuj:</span> <input type="text" id="sc-unzip" class="shortcut-input" value="${shortcuts.unzip}"></div>
+                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Pobierz:</span> <input type="text" id="sc-download" class="shortcut-input" value="${shortcuts.download}"></div>
+                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Dual Pane:</span> <input type="text" id="sc-dualPane" class="shortcut-input" value="${shortcuts.dualPane}"></div>
+                        </div>
+                        <button class="btn primary" id="save-shortcuts-btn" style="width: 100%; max-width: 300px; margin-bottom: 2rem;">Zapisz Skróty</button>
+
+                        <h3 style="color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px;">Zaawansowane powiązania plików</h3>
+                        <p style="font-size: 0.85em; opacity: 0.7;">Konfiguracja aplikacji domyślnych do otwierania określonych rozszerzeń plików (wymaga edycji w formacie JSON).</p>
+                        <div style="margin-bottom: 2rem; display: flex; gap: 1rem;">
+                            <button class="btn primary" id="settings-open-json">Edytuj powiązania (JSON)</button>
+                            <button class="btn" id="settings-reload-json">Odśwież powiązania</button>
                         </div>
                     </div>
                 `;
@@ -903,6 +1234,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                         });
                     }
 
+                    const cacheDaysInput = document.getElementById('settings-cache-days');
+                    if (cacheDaysInput) {
+                        cacheDaysInput.addEventListener('change', (e) => {
+                            cacheCleanupDays = parseInt(e.target.value) || 0;
+                            saveSettings();
+                        });
+                    }
+
                     document.getElementById('settings-open-config').addEventListener('click', async () => {
                         try {
                             await window.go.main.App.OpenSettingsFile();
@@ -914,7 +1253,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     document.getElementById('settings-reload-config').addEventListener('click', async () => {
                         await loadSettingsFromBackend();
                         updateView('settings');
-                        showAlert("Pomyslnie odswiezono ustawienia konfiguracyjne.");
+                        showAlert("Odswiezono.");
                     });
 
                     document.getElementById('save-shortcuts-btn').addEventListener('click', async () => {
@@ -928,9 +1267,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         shortcuts.terminal = document.getElementById('sc-terminal').value;
                         shortcuts.archive = document.getElementById('sc-archive').value;
                         shortcuts.unzip = document.getElementById('sc-unzip').value;
+                        shortcuts.download = document.getElementById('sc-download').value;
                         shortcuts.dualPane = document.getElementById('sc-dualPane').value;
                         await saveSettings();
-                        showAlert("Skroty zapisane!");
+                        showAlert("Zapisane.");
                     });
 
                     document.getElementById('settings-open-json').addEventListener('click', async () => {
@@ -944,9 +1284,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     document.getElementById('settings-reload-json').addEventListener('click', async () => {
                         try {
                             fileAssociations = await window.go.main.App.GetFileAssociations();
-                            showAlert("Pomyslnie odswiezono powiazania plikow.");
+                            showAlert("Odswiezono.");
                         } catch(err) {
-                            showAlert("Blad podczas odswiezania: " + err);
+                            showAlert(err);
                         }
                     });
                 }, 0);

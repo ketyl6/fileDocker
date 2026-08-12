@@ -249,13 +249,11 @@ body {
     color: var(--file-color);
 }
 
-/* 1. Klasa zaznaczania pliku musi byc nad kurserem */
 .ranger-item.marked {
     border: 1px solid var(--accent);
     background-color: var(--marked-bg);
 }
 
-/* 2. Klasa kursora znajduje sie tutaj, wiec zawsze 'wygra' kolor jej tla */
 .ranger-item.selected {
     background-color: var(--selected-bg);
     outline: 1px solid var(--text-main);
@@ -405,4 +403,11 @@ body {
     margin-bottom: 20px;
     word-wrap: break-word;
     font-size: clamp(11px, 1.2vw, 16px);
+}
+
+.text-ellipsis {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
 }

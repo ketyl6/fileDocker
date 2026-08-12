@@ -12,10 +12,10 @@
             <div class="sidebar-top">
                 <div class="brand">fileDocker</div>
                 <ul class="nav-links">
-                    <li class="active" data-view="local">Lokalne pliki</li>
-                    <li data-view="cloud">Google Drive</li>
-                    <li data-view="network">Siec SMB/FTP</li>
-                    <li data-view="cleaner">Oczyszczanie</li>
+                    <li class="active" data-view="local">Lokalne pliki <span style="float: right; opacity: 0.3; font-size: 0.85em;">Ctrl+1</span></li>
+                    <li data-view="cloud">Google Drive <span style="float: right; opacity: 0.3; font-size: 0.85em;">Ctrl+2</span></li>
+                    <li data-view="git">Projekty Git <span style="float: right; opacity: 0.3; font-size: 0.85em;">Ctrl+3</span></li>
+                    <li data-view="cleaner">Oczyszczanie <span style="float: right; opacity: 0.3; font-size: 0.85em;">Ctrl+4</span></li>
                 </ul>
             </div>
             <div class="theme-toggle" id="theme-toggle-btn">Zmien motyw</div>
@@ -28,7 +28,14 @@
                     <h2 id="view-title">Lokalne pliki</h2>
                 </div>
                 <div class="topbar-right">
-                    <button id="settings-btn" class="icon-btn" title="Ustawienia">
+                    <button id="drive-logout-btn" class="icon-btn" title="Wyloguj z Google Drive" style="display: none;">
+                        <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                            <polyline points="16 17 21 12 16 7"></polyline>
+                            <line x1="21" y1="12" x2="9" y2="12"></line>
+                        </svg>
+                    </button>
+                    <button id="settings-btn" class="icon-btn" title="Ustawienia (Ctrl+,)">
                         <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="12" cy="12" r="3"></circle>
                             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -47,7 +54,6 @@
             </div>
 
             <div class="bottom-shortcuts">
-                <!-- Skroty klawiszowe dynamicznie generowane -->
             </div>
         </main>
     </div>
@@ -63,7 +69,6 @@
         </ul>
     </div>
 
-    <!-- Ostrzezenia -->
     <div id="custom-alert" class="alert-overlay" style="display: none;">
         <div class="alert-box">
             <p id="alert-text"></p>
@@ -71,7 +76,6 @@
         </div>
     </div>
 
-    <!-- Wpisywanie danych -->
     <div id="input-modal" class="alert-overlay" style="display: none;">
         <div class="alert-box">
             <p id="input-text"></p>
@@ -82,18 +86,17 @@
                 <option value="rar">Archiwum .rar (wymaga CLI)</option>
             </select>
             <div style="display: flex; gap: 1rem; justify-content: center;">
-                <button id="input-ok" class="btn primary">Utworz</button>
+                <button id="input-ok" class="btn primary">Zatwierdz</button>
                 <button id="input-cancel" class="btn">Anuluj</button>
             </div>
         </div>
     </div>
 
-    <!-- NOWY: Modal do potwierdzania operacji -->
     <div id="confirm-modal" class="alert-overlay" style="display: none;">
         <div class="alert-box">
             <p id="confirm-text"></p>
             <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem;">
-                <button id="confirm-yes" class="btn danger" style="background-color: #ff5555; color: white;">Tak, usun</button>
+                <button id="confirm-yes" class="btn danger" style="background-color: #ff5555; color: white;">Tak</button>
                 <button id="confirm-no" class="btn primary">Anuluj</button>
             </div>
         </div>

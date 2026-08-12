@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,7 +15,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 )
 
 type App struct {
@@ -23,15 +26,17 @@ type App struct {
 }
 
 type AppSettings struct {
-	AppScale       float64           `json:"appScale"`
-	ShowHidden     bool              `json:"showHidden"`
-	ShowExtensions bool              `json:"showExtensions"`
-	FoldersFirst   bool              `json:"foldersFirst"`
-	IsDarkTheme    bool              `json:"isDarkTheme"`
-	DefaultPath    string            `json:"defaultPath"`
-	ConfirmDelete  bool              `json:"confirmDelete"`
-	CustomTerminal string            `json:"customTerminal"`
-	Shortcuts      map[string]string `json:"shortcuts"`
+	AppScale         float64           `json:"appScale"`
+	ShowHidden       bool              `json:"showHidden"`
+	ShowExtensions   bool              `json:"showExtensions"`
+	FoldersFirst     bool              `json:"foldersFirst"`
+	IsDarkTheme      bool              `json:"isDarkTheme"`
+	DefaultPath      string            `json:"defaultPath"`
+	ConfirmDelete    bool              `json:"confirmDelete"`
+	CustomTerminal   string            `json:"customTerminal"`
+	CacheCleanupDays int               `json:"cacheCleanupDays"`
+	ProjectsPath     string            `json:"projectsPath"`
+	Shortcuts        map[string]string `json:"shortcuts"`
 }
 
 func NewApp() *App {
@@ -40,6 +45,63 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.autoCleanCache()
+}
+
+func getAppCacheDir() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	var cacheDir string
+	if runtime.GOOS == "windows" {
+		cacheDir = filepath.Join(os.Getenv("LOCALAPPDATA"), "fileDocker", "Cache")
+	} else {
+		cacheDir = filepath.Join(homeDir, ".cache", "fileDocker")
+	}
+	os.MkdirAll(cacheDir, 0755)
+	return cacheDir, nil
+}
+
+func (a *App) autoCleanCache() {
+	settings := a.GetSettings()
+	if settings.CacheCleanupDays <= 0 {
+		return
+	}
+	cacheDir, err := getAppCacheDir()
+	if err != nil {
+		return
+	}
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		return
+	}
+	now := time.Now()
+	for _, e := range entries {
+		info, err := e.Info()
+		if err == nil {
+			if now.Sub(info.ModTime()).Hours() > float64(settings.CacheCleanupDays*24) {
+				os.RemoveAll(filepath.Join(cacheDir, e.Name()))
+			}
+		}
+	}
+}
+
+func (a *App) CleanAppCache() (string, error) {
+	cacheDir, err := getAppCacheDir()
+	if err != nil {
+		return "", err
+	}
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		return "Brak plikow cache", nil
+	}
+	count := 0
+	for _, e := range entries {
+		os.RemoveAll(filepath.Join(cacheDir, e.Name()))
+		count++
+	}
+	return fmt.Sprintf("Usunieto %d plikow", count), nil
 }
 
 type FileInfo struct {
@@ -92,14 +154,11 @@ func (a *App) GetRangerData(targetPath string, showHidden bool) (RangerState, er
 	if targetPath == "" {
 		targetPath, _ = os.UserHomeDir()
 	}
-
 	absPath, err := filepath.Abs(targetPath)
 	if err == nil {
 		targetPath = absPath
 	}
-
 	targetPath = filepath.Clean(targetPath)
-
 	for {
 		info, err := os.Stat(targetPath)
 		if err == nil && info.IsDir() {
@@ -112,12 +171,10 @@ func (a *App) GetRangerData(targetPath string, showHidden bool) (RangerState, er
 		}
 		targetPath = parent
 	}
-
 	entries, err := os.ReadDir(targetPath)
 	if err != nil {
 		return RangerState{}, err
 	}
-
 	var files []FileInfo
 	for _, entry := range entries {
 		fullPath := filepath.Join(targetPath, entry.Name())
@@ -130,12 +187,10 @@ func (a *App) GetRangerData(targetPath string, showHidden bool) (RangerState, er
 			Path:  fullPath,
 		})
 	}
-
 	parentPath := filepath.Dir(targetPath)
 	if parentPath == targetPath || parentPath == targetPath+"\\" {
 		parentPath = ""
 	}
-
 	return RangerState{
 		CurrentPath: targetPath,
 		ParentPath:  parentPath,
@@ -184,7 +239,7 @@ func (a *App) FileAction(action string, sources []string, destination string) er
 			if info != nil && info.IsDir() {
 				rel, err := filepath.Rel(src, destination)
 				if err == nil && !strings.HasPrefix(rel, "..") {
-					return fmt.Errorf("nie mozna wkleic folderu do jego wlasnego wnetrza: %s", filepath.Base(src))
+					return fmt.Errorf("blad folderu")
 				}
 			}
 			dest := filepath.Join(destination, filepath.Base(src))
@@ -200,7 +255,7 @@ func (a *App) FileAction(action string, sources []string, destination string) er
 			if info != nil && info.IsDir() {
 				rel, err := filepath.Rel(src, destination)
 				if err == nil && !strings.HasPrefix(rel, "..") {
-					return fmt.Errorf("nie mozna przeniesc folderu do jego wlasnego wnetrza: %s", filepath.Base(src))
+					return fmt.Errorf("blad przenoszenia")
 				}
 			}
 			dest := filepath.Join(destination, filepath.Base(src))
@@ -286,17 +341,14 @@ func copyFile(src, dst string) error {
 
 func (a *App) CreateArchive(srcPaths []string, destName string, format string) error {
 	if len(srcPaths) == 0 {
-		return fmt.Errorf("brak plikow do spakowania")
+		return fmt.Errorf("brak plikow")
 	}
-
 	baseDir := filepath.Dir(srcPaths[0])
-
 	ext := "." + format
 	if filepath.Ext(destName) == ext {
 		destName = destName[:len(destName)-len(ext)]
 	}
 	destPath := filepath.Join(baseDir, destName+ext)
-
 	switch format {
 	case "zip":
 		return createZip(srcPaths, destPath, baseDir)
@@ -305,7 +357,7 @@ func (a *App) CreateArchive(srcPaths []string, destName string, format string) e
 	case "rar":
 		return createRar(srcPaths, destPath, baseDir)
 	default:
-		return fmt.Errorf("nieobslugiwany format archiwum")
+		return fmt.Errorf("nieobslugiwany format")
 	}
 }
 
@@ -315,10 +367,8 @@ func createZip(srcPaths []string, destPath string, baseDir string) error {
 		return err
 	}
 	defer f.Close()
-
 	writer := zip.NewWriter(f)
 	defer writer.Close()
-
 	for _, src := range srcPaths {
 		err = filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -368,10 +418,8 @@ func createTar(srcPaths []string, destPath string, baseDir string) error {
 		return err
 	}
 	defer f.Close()
-
 	writer := tar.NewWriter(f)
 	defer writer.Close()
-
 	for _, src := range srcPaths {
 		err = filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -389,11 +437,9 @@ func createTar(srcPaths []string, destPath string, baseDir string) error {
 				return err
 			}
 			header.Name = filepath.ToSlash(relPath)
-
 			if err := writer.WriteHeader(header); err != nil {
 				return err
 			}
-
 			if info.IsDir() {
 				return nil
 			}
@@ -421,21 +467,18 @@ func createRar(srcPaths []string, destPath string, baseDir string) error {
 	cmd.Dir = baseDir
 	err := cmd.Run()
 	if err != nil {
-		return fmt.Errorf("blad tworzenia RAR (wymaga CLI w PATH systemu): %v", err)
+		return fmt.Errorf("blad RAR: %v", err)
 	}
 	return nil
 }
 
-// Zmodyfikowana funkcja do dekompresji (wsparcie zip, tar, rar)
 func (a *App) UnzipItem(src string) error {
 	ext := strings.ToLower(filepath.Ext(src))
 	dest := src[:len(src)-len(ext)]
-
 	err := os.MkdirAll(dest, 0755)
 	if err != nil {
 		return err
 	}
-
 	switch ext {
 	case ".zip":
 		return extractZip(src, dest)
@@ -444,7 +487,7 @@ func (a *App) UnzipItem(src string) error {
 	case ".rar":
 		return extractRar(src, dest)
 	default:
-		return fmt.Errorf("nieobsługiwany format do wypakowania: %s", ext)
+		return fmt.Errorf("nieobslugiwany format")
 	}
 }
 
@@ -454,7 +497,6 @@ func extractZip(src string, dest string) error {
 		return err
 	}
 	defer reader.Close()
-
 	for _, file := range reader.File {
 		path := filepath.Join(dest, file.Name)
 		if file.FileInfo().IsDir() {
@@ -484,7 +526,6 @@ func extractTar(src string, dest string) error {
 		return err
 	}
 	defer f.Close()
-
 	tr := tar.NewReader(f)
 	for {
 		hdr, err := tr.Next()
@@ -494,13 +535,11 @@ func extractTar(src string, dest string) error {
 		if err != nil {
 			return err
 		}
-
 		path := filepath.Join(dest, hdr.Name)
 		if hdr.FileInfo().IsDir() {
 			os.MkdirAll(path, hdr.FileInfo().Mode())
 			continue
 		}
-
 		os.MkdirAll(filepath.Dir(path), 0755)
 		f2, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, hdr.FileInfo().Mode())
 		if err != nil {
@@ -513,15 +552,13 @@ func extractTar(src string, dest string) error {
 }
 
 func extractRar(src string, dest string) error {
-	// Próba wypakowania używając unrar
 	cmd := exec.Command("unrar", "x", "-y", src, dest+string(filepath.Separator))
 	err := cmd.Run()
 	if err != nil {
-		// Fallback do rar
 		cmd = exec.Command("rar", "x", "-y", src, dest+string(filepath.Separator))
 		err = cmd.Run()
 		if err != nil {
-			return fmt.Errorf("blad wypakowywania RAR (wymaga CLI unrar lub rar zainstalowanego w systemie): %v", err)
+			return fmt.Errorf("blad RAR: %v", err)
 		}
 	}
 	return nil
@@ -556,14 +593,12 @@ func (a *App) OpenTerminal(dir string, customTerm string) error {
 func (a *App) CleanTempFiles() (string, error) {
 	var dirs []string
 	dirs = append(dirs, os.TempDir())
-
 	if runtime.GOOS == "windows" {
 		dirs = append(dirs, filepath.Join(os.Getenv("WINDIR"), "Temp"))
 		dirs = append(dirs, filepath.Join(os.Getenv("LOCALAPPDATA"), "Temp"))
 	} else if runtime.GOOS == "linux" {
 		dirs = append(dirs, "/tmp", "/var/tmp")
 	}
-
 	deletedCount := 0
 	for _, d := range dirs {
 		if d == "" {
@@ -581,7 +616,7 @@ func (a *App) CleanTempFiles() (string, error) {
 			}
 		}
 	}
-	return fmt.Sprintf("Usunieto elementow: %d", deletedCount), nil
+	return fmt.Sprintf("Usunieto Temp: %d", deletedCount), nil
 }
 
 func getDockerConfigDir() (string, error) {
@@ -594,14 +629,16 @@ func getDockerConfigDir() (string, error) {
 
 func (a *App) GetSettings() AppSettings {
 	defaultSettings := AppSettings{
-		AppScale:       1.0,
-		ShowHidden:     false,
-		ShowExtensions: true,
-		FoldersFirst:   true,
-		IsDarkTheme:    true,
-		DefaultPath:    "",
-		ConfirmDelete:  true,
-		CustomTerminal: "",
+		AppScale:         1.0,
+		ShowHidden:       false,
+		ShowExtensions:   true,
+		FoldersFirst:     true,
+		IsDarkTheme:      true,
+		DefaultPath:      "",
+		ConfirmDelete:    true,
+		CustomTerminal:   "",
+		CacheCleanupDays: 7,
+		ProjectsPath:     "",
 		Shortcuts: map[string]string{
 			"copy":     "c",
 			"cut":      "x",
@@ -614,20 +651,19 @@ func (a *App) GetSettings() AppSettings {
 			"archive":  "p",
 			"unzip":    "u",
 			"dualPane": "d",
+			"download": "s",
 		},
 	}
-
 	cfgDir, err := getDockerConfigDir()
 	if err != nil {
 		return defaultSettings
 	}
-
 	path := filepath.Join(cfgDir, "settings.json")
 	data, err := os.ReadFile(path)
 	if err == nil {
 		json.Unmarshal(data, &defaultSettings)
 	}
-
+	a.SaveSettings(defaultSettings)
 	return defaultSettings
 }
 
@@ -638,7 +674,6 @@ func (a *App) SaveSettings(settings AppSettings) error {
 	}
 	os.MkdirAll(cfgDir, 0755)
 	path := filepath.Join(cfgDir, "settings.json")
-
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -653,9 +688,7 @@ func (a *App) OpenSettingsFile() error {
 	}
 	os.MkdirAll(cfgDir, 0755)
 	path := filepath.Join(cfgDir, "settings.json")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		a.SaveSettings(a.GetSettings())
-	}
+	a.GetSettings()
 	return a.OpenFileCustom(path, "")
 }
 
@@ -696,7 +729,6 @@ func (a *App) OpenFileCustom(filePath string, appName string) error {
 		}
 		return cmd.Start()
 	}
-
 	switch runtime.GOOS {
 	case "linux":
 		return exec.Command("xdg-open", filePath).Start()
@@ -725,23 +757,31 @@ func (a *App) IsDriveAuthenticated() bool {
 	return false
 }
 
+func (a *App) LogoutGoogle() error {
+	a.driveToken = ""
+	cfgDir, err := getDockerConfigDir()
+	if err == nil {
+		tokenFile := filepath.Join(cfgDir, "google_token.txt")
+		os.Remove(tokenFile)
+	}
+	return nil
+}
+
 func (a *App) LoginGoogle(clientID string, clientSecret string) (string, error) {
 	if clientID == "" || clientSecret == "" {
-		return "", fmt.Errorf("brak danych logowania")
+		return "", fmt.Errorf("brak danych")
 	}
 	codeChan := make(chan string)
 	srv := &http.Server{Addr: "127.0.0.1:8080"}
 	http.HandleFunc("/oauth2callback", func(w http.ResponseWriter, r *http.Request) {
 		code := r.URL.Query().Get("code")
-		fmt.Fprintf(w, "<html><body>Autoryzacja zakonczona. Mozesz zamknac to okno.</body></html>")
+		fmt.Fprintf(w, "<html><body>Zakonczono.</body></html>")
 		go func() { codeChan <- code }()
 	})
 	go func() {
 		srv.ListenAndServe()
 	}()
-
 	authURL := fmt.Sprintf("https://accounts.google.com/o/oauth2/v2/auth?client_id=%s&redirect_uri=http://127.0.0.1:8080/oauth2callback&response_type=code&scope=https://www.googleapis.com/auth/drive", clientID)
-
 	var err error
 	switch runtime.GOOS {
 	case "linux":
@@ -754,10 +794,8 @@ func (a *App) LoginGoogle(clientID string, clientSecret string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-
 	code := <-codeChan
 	srv.Shutdown(context.Background())
-
 	resp, err := http.PostForm("https://oauth2.googleapis.com/token", url.Values{
 		"code":          {code},
 		"client_id":     {clientID},
@@ -769,10 +807,8 @@ func (a *App) LoginGoogle(clientID string, clientSecret string) (string, error) 
 		return "", err
 	}
 	defer resp.Body.Close()
-
 	var tokenRes map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&tokenRes)
-
 	if token, ok := tokenRes["access_token"].(string); ok {
 		a.driveToken = token
 		cfgDir, err := getDockerConfigDir()
@@ -781,7 +817,7 @@ func (a *App) LoginGoogle(clientID string, clientSecret string) (string, error) 
 			tokenFile := filepath.Join(cfgDir, "google_token.txt")
 			os.WriteFile(tokenFile, []byte(token), 0600)
 		}
-		return "Zalogowano pomyslnie", nil
+		return "Zalogowano", nil
 	}
 	return "", fmt.Errorf("blad autoryzacji")
 }
@@ -795,18 +831,23 @@ func (a *App) GetDriveData(folderId string) (RangerState, error) {
 	}
 	query := fmt.Sprintf("'%s' in parents and trashed=false", folderId)
 	escapedQuery := url.QueryEscape(query)
-	reqURL := fmt.Sprintf("https://www.googleapis.com/drive/v3/files?q=%s&fields=files(id,name,mimeType)", escapedQuery)
-
+	reqURL := fmt.Sprintf("https://www.googleapis.com/drive/v3/files?q=%s&fields=files(id,name,mimeType)&supportsAllDrives=true&includeItemsFromAllDrives=true", escapedQuery)
 	req, _ := http.NewRequest("GET", reqURL, nil)
 	req.Header.Add("Authorization", "Bearer "+a.driveToken)
-
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return RangerState{}, err
 	}
 	defer resp.Body.Close()
-
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == 401 {
+			a.LogoutGoogle()
+			return RangerState{}, fmt.Errorf("sesja wygasla")
+		}
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return RangerState{}, fmt.Errorf("odmowa API: %s", string(bodyBytes))
+	}
 	var res struct {
 		Files []struct {
 			Id       string `json:"id"`
@@ -814,8 +855,9 @@ func (a *App) GetDriveData(folderId string) (RangerState, error) {
 			MimeType string `json:"mimeType"`
 		} `json:"files"`
 	}
-	json.NewDecoder(resp.Body).Decode(&res)
-
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return RangerState{}, fmt.Errorf("blad JSON: %v", err)
+	}
 	var files []FileInfo
 	for _, f := range res.Files {
 		files = append(files, FileInfo{
@@ -830,4 +872,347 @@ func (a *App) GetDriveData(folderId string) (RangerState, error) {
 		ParentPath:  "",
 		Files:       files,
 	}, nil
+}
+
+func (a *App) DownloadFromDrive(fileId string, fileName string, target string) (string, error) {
+	if a.driveToken == "" {
+		return "", fmt.Errorf("nie zalogowano")
+	}
+	var destFolder string
+	if target == "CACHE" {
+		destFolder, _ = getAppCacheDir()
+	} else if target == "DOWNLOADS" {
+		home, _ := os.UserHomeDir()
+		destFolder = filepath.Join(home, "Downloads")
+		os.MkdirAll(destFolder, 0755)
+	} else {
+		destFolder = target
+	}
+	destPath := filepath.Join(destFolder, fileName)
+	reqURL := fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s?alt=media", fileId)
+	req, _ := http.NewRequest("GET", reqURL, nil)
+	req.Header.Add("Authorization", "Bearer "+a.driveToken)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("blad pobierania")
+	}
+	out, err := os.Create(destPath)
+	if err != nil {
+		return "", err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, resp.Body)
+	return destPath, err
+}
+
+func (a *App) DeleteDriveFile(fileId string) error {
+	if a.driveToken == "" {
+		return fmt.Errorf("nie zalogowano")
+	}
+	reqURL := fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s", fileId)
+	req, _ := http.NewRequest("DELETE", reqURL, nil)
+	req.Header.Add("Authorization", "Bearer "+a.driveToken)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 204 {
+		return fmt.Errorf("blad usuwania")
+	}
+	return nil
+}
+
+type NetworkDevice struct {
+	IP   string `json:"ip"`
+	Type string `json:"type"`
+}
+
+func (a *App) ScanLocalNetwork() []NetworkDevice {
+	var devices []NetworkDevice
+	var mutex sync.Mutex
+	var wg sync.WaitGroup
+	baseIP := "192.168.1"
+	addrs, err := net.InterfaceAddrs()
+	if err == nil {
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil {
+				parts := strings.Split(ipnet.IP.String(), ".")
+				if len(parts) == 4 {
+					baseIP = fmt.Sprintf("%s.%s.%s", parts[0], parts[1], parts[2])
+					break
+				}
+			}
+		}
+	}
+	for i := 1; i <= 254; i++ {
+		targetIP := fmt.Sprintf("%s.%d", baseIP, i)
+		wg.Add(1)
+		go func(ip string) {
+			defer wg.Done()
+			connSMB, err := net.DialTimeout("tcp", ip+":445", 400*time.Millisecond)
+			if err == nil {
+				connSMB.Close()
+				mutex.Lock()
+				devices = append(devices, NetworkDevice{IP: ip, Type: "SMB"})
+				mutex.Unlock()
+			}
+			connFTP, err := net.DialTimeout("tcp", ip+":21", 400*time.Millisecond)
+			if err == nil {
+				connFTP.Close()
+				mutex.Lock()
+				devices = append(devices, NetworkDevice{IP: ip, Type: "FTP"})
+				mutex.Unlock()
+			}
+		}(targetIP)
+	}
+	wg.Wait()
+	return devices
+}
+
+var netHost, netUser, netPass, netType string
+
+func (a *App) ConnectNetwork(host, user, pass, nType string) error {
+	netHost = host
+	netUser = user
+	netPass = pass
+	netType = nType
+	return nil
+}
+
+func (a *App) GetNetworkData(path string) (RangerState, error) {
+	return RangerState{}, fmt.Errorf("Wymaga zaleznosci")
+}
+
+func (a *App) DownloadFromNetwork(remotePath string, fileName string, target string) (string, error) {
+	return "", fmt.Errorf("Wymaga zaleznosci")
+}
+
+func (a *App) DeleteNetworkFile(remotePath string) error {
+	return fmt.Errorf("Brak uprawnien")
+}
+
+type GitRepo struct {
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Branch string `json:"branch"`
+	Status string `json:"status"`
+}
+
+func (a *App) ScanGitRepos(basePath string) ([]GitRepo, error) {
+	if basePath == "" {
+		basePath, _ = os.UserHomeDir()
+	}
+	var repos []GitRepo
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		p := filepath.Join(basePath, e.Name())
+		if isGitRepo(p) {
+			repos = append(repos, a.getGitInfo(p, e.Name()))
+		} else {
+			subEntries, err := os.ReadDir(p)
+			if err == nil {
+				for _, sub := range subEntries {
+					if !sub.IsDir() {
+						continue
+					}
+					subP := filepath.Join(p, sub.Name())
+					if isGitRepo(subP) {
+						repos = append(repos, a.getGitInfo(subP, sub.Name()))
+					}
+				}
+			}
+		}
+	}
+	return repos, nil
+}
+
+func isGitRepo(path string) bool {
+	info, err := os.Stat(filepath.Join(path, ".git"))
+	return err == nil && info.IsDir()
+}
+
+func (a *App) getGitInfo(path string, name string) GitRepo {
+	repo := GitRepo{Name: name, Path: path, Branch: "master", Status: "czyste"}
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = path
+	out, err := cmd.Output()
+	if err == nil {
+		repo.Branch = strings.TrimSpace(string(out))
+	}
+	cmd2 := exec.Command("git", "status", "-s")
+	cmd2.Dir = path
+	out2, err := cmd2.Output()
+	if err == nil {
+		strOut := strings.TrimSpace(string(out2))
+		if strOut != "" {
+			lines := strings.Split(strOut, "\n")
+			repo.Status = fmt.Sprintf("%d zmienionych", len(lines))
+		}
+	}
+	return repo
+}
+
+type GitCommit struct {
+	Hash    string `json:"hash"`
+	Message string `json:"message"`
+	Date    string `json:"date"`
+}
+
+func (a *App) GetGitHistory(path string) ([]GitCommit, error) {
+	cmd := exec.Command("git", "log", "-n", "50", "--pretty=format:%h|%s|%cr")
+	cmd.Dir = path
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var commits []GitCommit
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		parts := strings.SplitN(line, "|", 3)
+		if len(parts) == 3 {
+			commits = append(commits, GitCommit{Hash: parts[0], Message: parts[1], Date: parts[2]})
+		}
+	}
+	return commits, nil
+}
+
+func (a *App) CheckoutGitCommit(path, hash string) error {
+	cmd := exec.Command("git", "checkout", hash)
+	cmd.Dir = path
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("checkout error: %s", string(out))
+	}
+	return nil
+}
+
+type RemoteRepo struct {
+	Name        string `json:"name"`
+	FullName    string `json:"fullName"`
+	Description string `json:"description"`
+	CloneURL    string `json:"cloneUrl"`
+}
+
+func (a *App) SearchGitHub(query string) ([]RemoteRepo, error) {
+	if query == "" {
+		return nil, fmt.Errorf("puste zapytanie")
+	}
+
+	escaped := url.QueryEscape(query)
+	var repos []RemoteRepo
+	var wg sync.WaitGroup
+	var mutex sync.Mutex
+	seen := make(map[string]bool)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		resp, err := http.Get("https://api.github.com/search/repositories?q=" + escaped + "&per_page=15")
+		if err == nil && resp.StatusCode == 200 {
+			defer resp.Body.Close()
+			var res struct {
+				Items []struct {
+					Name        string `json:"name"`
+					FullName    string `json:"full_name"`
+					Description string `json:"description"`
+					CloneURL    string `json:"clone_url"`
+				} `json:"items"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&res) == nil {
+				mutex.Lock()
+				for _, item := range res.Items {
+					if !seen[item.FullName] {
+						seen[item.FullName] = true
+						repos = append(repos, RemoteRepo{
+							Name:        item.Name,
+							FullName:    item.FullName,
+							Description: item.Description,
+							CloneURL:    item.CloneURL,
+						})
+					}
+				}
+				mutex.Unlock()
+			}
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		resp, err := http.Get("https://api.github.com/users/" + escaped + "/repos?per_page=15&sort=updated")
+		if err == nil && resp.StatusCode == 200 {
+			defer resp.Body.Close()
+			var res []struct {
+				Name        string `json:"name"`
+				FullName    string `json:"full_name"`
+				Description string `json:"description"`
+				CloneURL    string `json:"clone_url"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&res) == nil {
+				mutex.Lock()
+				for _, item := range res {
+					if !seen[item.FullName] {
+						seen[item.FullName] = true
+						repos = append(repos, RemoteRepo{
+							Name:        item.Name,
+							FullName:    item.FullName,
+							Description: item.Description,
+							CloneURL:    item.CloneURL,
+						})
+					}
+				}
+				mutex.Unlock()
+			}
+		}
+	}()
+
+	wg.Wait()
+
+	if len(repos) == 0 {
+		return nil, fmt.Errorf("brak wynikow dla repozytorium ani uzytkownika")
+	}
+
+	return repos, nil
+}
+
+func (a *App) GetGitHubBranches(fullName string) ([]string, error) {
+	resp, err := http.Get("https://api.github.com/repos/" + fullName + "/branches")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var res []struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, err
+	}
+	var branches []string
+	for _, b := range res {
+		branches = append(branches, b.Name)
+	}
+	return branches, nil
+}
+
+func (a *App) CloneRemoteRepo(cloneUrl, branch, destParent string) error {
+	cmd := exec.Command("git", "clone", "-b", branch, cloneUrl)
+	cmd.Dir = destParent
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("clone error: %s", string(out))
+	}
+	return nil
 }

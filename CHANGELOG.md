@@ -2,6 +2,40 @@
 
 All notable changes to fileDocker are documented in this file.
 
+## [alpha3] - 2026-08-12
+
+### Added
+- **Git Projects tab**: replaced the "Sieć" (SMB/FTP) tab entirely with a new "Projekty Git" tab. It scans a configurable root folder (new `projectsPath` setting, up to 2 levels deep) for local `.git` repositories and lists each one with its current branch and number of changed/untracked files.
+- **Commit history browsing**: clicking into a local repo shows its commit history. Clicking a commit checks it out (standard Git detached-HEAD behavior - Git itself blocks the checkout if you have uncommitted changes that would be overwritten).
+- **Branch switching**: a Branches panel lists all local branches for the selected repo, with the current one highlighted; clicking another branch checks it out and refreshes the view.
+- **GitHub search & clone**: a built-in search box queries GitHub concurrently by repository name and by username, merges and de-duplicates the results, and lets you clone a result straight into a chosen local folder.
+- **Auto cache cleanup**: a new `cacheCleanupDays` setting (default 7) automatically clears out old cached downloads (from Google Drive, etc.) on startup based on their age.
+- **Keyboard-only interface navigation**:
+  - `Ctrl+1` / `Ctrl+2` / `Ctrl+3` / `Ctrl+4` switch directly between the Local Files, Google Drive, Git Projects, and Cleaner tabs.
+  - `Ctrl+,` (and `Ctrl+5`) opens Settings from anywhere.
+  - Pressing `Escape` while typing in any text field (commit message, GitHub search, rename, etc.) blurs the field and returns keyboard control to the file view instead of doing nothing.
+  - Sidebar tabs now show their shortcut hint next to the label.
+- New `download` shortcut (`s`) for pulling remote items (Drive/Git) down to the local cache.
+- **Google Drive fully operational**: app now can connect to user's Google account and can browse, download and remove files to the Drive
+
+### Changed
+- Settings panel redesigned with clearer section headers, short descriptions under each option, and a responsive grid layout for the keyboard shortcuts list so it no longer looks cramped or unlabeled.
+- Google Drive item in the sidebar remains the only working cloud/remote source; the old "Sieć" label and everything tied to it is gone.
+
+### Removed
+- **SMB/FTP networking dropped**: a full local-subnet SMB/FTP scanner (Go goroutines probing ports 445/21) and manual connection UI were built, then removed before release in favor of the lighter Git Projects tab. fileDocker does not connect to network shares or FTP servers.
+
+### Known issues / carried over
+- **Dual Pane** mode is still a stub - the setting and `d` shortcut exist, but activating it just shows a "coming soon" message.
+- Need for Google account logging improvment for easier and smoother user expierience.
+
+### Roadmap (proposed, not yet started)
+1. Improving OAuth2 (Google account logging) process.
+2. Completing **Dual Pane** (Total Commander-style split view)
+3. An advanced cleanup module - a smart scanner for reclaiming disk space from dev artifacts like Python `venv`, `node_modules`, and compiled C++ binaries and other yet to be established.
+
+---
+
 ## [alpha2.2] - 2026-08-12
 
 ### Added
