@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"context"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 )
 
@@ -28,6 +30,7 @@ type AppSettings struct {
 	IsDarkTheme    bool              `json:"isDarkTheme"`
 	DefaultPath    string            `json:"defaultPath"`
 	ConfirmDelete  bool              `json:"confirmDelete"`
+	CustomTerminal string            `json:"customTerminal"`
 	Shortcuts      map[string]string `json:"shortcuts"`
 }
 
@@ -168,20 +171,52 @@ func (a *App) ReadFilePreview(targetPath string) (string, error) {
 	return string(data), nil
 }
 
-func (a *App) FileAction(action string, source string, destination string) error {
-	switch action {
-	case "delete":
-		return os.RemoveAll(source)
-	case "copy":
-		return copyItem(source, destination)
-	case "cut":
-		err := copyItem(source, destination)
-		if err != nil {
-			return err
+func (a *App) FileAction(action string, sources []string, destination string) error {
+	for _, src := range sources {
+		switch action {
+		case "delete":
+			err := os.RemoveAll(src)
+			if err != nil {
+				return fmt.Errorf("blad usuwania: %v", err)
+			}
+		case "copy":
+			info, _ := os.Stat(src)
+			if info != nil && info.IsDir() {
+				rel, err := filepath.Rel(src, destination)
+				if err == nil && !strings.HasPrefix(rel, "..") {
+					return fmt.Errorf("nie mozna wkleic folderu do jego wlasnego wnetrza: %s", filepath.Base(src))
+				}
+			}
+			dest := filepath.Join(destination, filepath.Base(src))
+			if src == dest {
+				dest = filepath.Join(destination, "Kopia - "+filepath.Base(src))
+			}
+			err := copyItem(src, dest)
+			if err != nil {
+				return fmt.Errorf("blad kopiowania: %v", err)
+			}
+		case "cut":
+			info, _ := os.Stat(src)
+			if info != nil && info.IsDir() {
+				rel, err := filepath.Rel(src, destination)
+				if err == nil && !strings.HasPrefix(rel, "..") {
+					return fmt.Errorf("nie mozna przeniesc folderu do jego wlasnego wnetrza: %s", filepath.Base(src))
+				}
+			}
+			dest := filepath.Join(destination, filepath.Base(src))
+			if src == dest {
+				continue
+			}
+			err := copyItem(src, dest)
+			if err != nil {
+				return fmt.Errorf("blad przenoszenia: %v", err)
+			}
+			os.RemoveAll(src)
+		default:
+			return fmt.Errorf("nieznana akcja")
 		}
-		return os.RemoveAll(source)
 	}
-	return fmt.Errorf("nieznana akcja")
+	return nil
 }
 
 func (a *App) CreateItem(path string, isDir bool) error {
@@ -249,43 +284,146 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-func (a *App) ZipItem(src string) error {
-	dest := src + ".zip"
-	f, err := os.Create(dest)
+func (a *App) CreateArchive(srcPaths []string, destName string, format string) error {
+	if len(srcPaths) == 0 {
+		return fmt.Errorf("brak plikow do spakowania")
+	}
+
+	baseDir := filepath.Dir(srcPaths[0])
+
+	ext := "." + format
+	if filepath.Ext(destName) == ext {
+		destName = destName[:len(destName)-len(ext)]
+	}
+	destPath := filepath.Join(baseDir, destName+ext)
+
+	switch format {
+	case "zip":
+		return createZip(srcPaths, destPath, baseDir)
+	case "tar":
+		return createTar(srcPaths, destPath, baseDir)
+	case "rar":
+		return createRar(srcPaths, destPath, baseDir)
+	default:
+		return fmt.Errorf("nieobslugiwany format archiwum")
+	}
+}
+
+func createZip(srcPaths []string, destPath string, baseDir string) error {
+	f, err := os.Create(destPath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+
 	writer := zip.NewWriter(f)
 	defer writer.Close()
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+
+	for _, src := range srcPaths {
+		err = filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if path == destPath {
+				return nil
+			}
+			header, err := zip.FileInfoHeader(info)
+			if err != nil {
+				return err
+			}
+			header.Method = zip.Deflate
+			relPath, err := filepath.Rel(baseDir, path)
+			if err != nil {
+				return err
+			}
+			header.Name = filepath.ToSlash(relPath)
+			if info.IsDir() {
+				header.Name += "/"
+			}
+			headerWriter, err := writer.CreateHeader(header)
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
+			f1, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f1.Close()
+			_, err = io.Copy(headerWriter, f1)
+			return err
+		})
 		if err != nil {
 			return err
 		}
-		header, err := zip.FileInfoHeader(info)
-		if err != nil {
-			return err
-		}
-		header.Method = zip.Deflate
-		header.Name, _ = filepath.Rel(filepath.Dir(src), path)
-		if info.IsDir() {
-			header.Name += "/"
-		}
-		headerWriter, err := writer.CreateHeader(header)
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		f1, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f1.Close()
-		_, err = io.Copy(headerWriter, f1)
+	}
+	return nil
+}
+
+func createTar(srcPaths []string, destPath string, baseDir string) error {
+	f, err := os.Create(destPath)
+	if err != nil {
 		return err
-	})
+	}
+	defer f.Close()
+
+	writer := tar.NewWriter(f)
+	defer writer.Close()
+
+	for _, src := range srcPaths {
+		err = filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if path == destPath {
+				return nil
+			}
+			header, err := tar.FileInfoHeader(info, info.Name())
+			if err != nil {
+				return err
+			}
+			relPath, err := filepath.Rel(baseDir, path)
+			if err != nil {
+				return err
+			}
+			header.Name = filepath.ToSlash(relPath)
+
+			if err := writer.WriteHeader(header); err != nil {
+				return err
+			}
+
+			if info.IsDir() {
+				return nil
+			}
+			f1, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f1.Close()
+			_, err = io.Copy(writer, f1)
+			return err
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func createRar(srcPaths []string, destPath string, baseDir string) error {
+	args := []string{"a", destPath}
+	for _, src := range srcPaths {
+		args = append(args, filepath.Base(src))
+	}
+	cmd := exec.Command("rar", args...)
+	cmd.Dir = baseDir
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("blad tworzenia RAR (wymaga CLI w PATH systemu): %v", err)
+	}
+	return nil
 }
 
 func (a *App) UnzipItem(src string) error {
@@ -318,14 +456,27 @@ func (a *App) UnzipItem(src string) error {
 	return nil
 }
 
-func (a *App) OpenTerminal(dir string) error {
+func (a *App) OpenTerminal(dir string, customTerm string) error {
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/c", "start", "cmd")
+		term := "cmd"
+		if customTerm != "" {
+			term = customTerm
+		}
+		cmd = exec.Command("cmd", "/c", "start", term)
 	} else if runtime.GOOS == "darwin" {
-		cmd = exec.Command("open", "-a", "Terminal", dir)
+		term := "Terminal"
+		if customTerm != "" {
+			term = customTerm
+		}
+		cmd = exec.Command("open", "-a", term, dir)
+		return cmd.Start()
 	} else {
-		cmd = exec.Command("x-terminal-emulator")
+		term := "x-terminal-emulator"
+		if customTerm != "" {
+			term = customTerm
+		}
+		cmd = exec.Command(term)
 	}
 	cmd.Dir = dir
 	return cmd.Start()
@@ -379,15 +530,17 @@ func (a *App) GetSettings() AppSettings {
 		IsDarkTheme:    true,
 		DefaultPath:    "",
 		ConfirmDelete:  true,
+		CustomTerminal: "",
 		Shortcuts: map[string]string{
 			"copy":     "c",
 			"cut":      "x",
 			"paste":    "v",
 			"delete":   "Delete",
 			"newFile":  "n",
-			"newDir":   "N",
+			"newDir":   "n",
 			"terminal": "t",
-			"zip":      "z",
+			"mark":     "z",
+			"archive":  "p",
 			"unzip":    "u",
 			"dualPane": "d",
 		},

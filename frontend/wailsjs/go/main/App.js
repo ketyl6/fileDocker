@@ -6,6 +6,10 @@ export function CleanTempFiles() {
   return window['go']['main']['App']['CleanTempFiles']();
 }
 
+export function CreateArchive(arg1, arg2, arg3) {
+  return window['go']['main']['App']['CreateArchive'](arg1, arg2, arg3);
+}
+
 export function CreateItem(arg1, arg2) {
   return window['go']['main']['App']['CreateItem'](arg1, arg2);
 }
@@ -62,8 +66,8 @@ export function OpenSettingsFile() {
   return window['go']['main']['App']['OpenSettingsFile']();
 }
 
-export function OpenTerminal(arg1) {
-  return window['go']['main']['App']['OpenTerminal'](arg1);
+export function OpenTerminal(arg1, arg2) {
+  return window['go']['main']['App']['OpenTerminal'](arg1, arg2);
 }
 
 export function ReadFilePreview(arg1) {
@@ -76,8 +80,4 @@ export function SaveSettings(arg1) {
 
 export function UnzipItem(arg1) {
   return window['go']['main']['App']['UnzipItem'](arg1);
-}
-
-export function ZipItem(arg1) {
-  return window['go']['main']['App']['ZipItem'](arg1);
 }

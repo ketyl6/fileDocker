@@ -47,19 +47,19 @@
             </div>
 
             <div class="bottom-shortcuts">
-                <!-- Skroty klawiszowe wg ustawien -->
+                <!-- Skroty klawiszowe dynamicznie generowane -->
             </div>
         </main>
     </div>
 
     <div id="context-menu" class="context-menu">
         <ul>
-            <li id="cm-new-file">Nowy plik (n)</li>
-            <li id="cm-new-dir">Nowy folder (Shift+n)</li>
-            <li id="cm-copy">Kopiuj (c)</li>
-            <li id="cm-cut">Wytnij (x)</li>
-            <li id="cm-paste">Wklej (v)</li>
-            <li id="cm-delete" class="danger">Usun (Delete)</li>
+            <li id="cm-new-file">Nowy plik</li>
+            <li id="cm-new-dir">Nowy folder</li>
+            <li id="cm-copy">Kopiuj</li>
+            <li id="cm-cut">Wytnij</li>
+            <li id="cm-paste">Wklej</li>
+            <li id="cm-delete" class="danger">Usun</li>
         </ul>
     </div>
 
@@ -74,6 +74,11 @@
         <div class="alert-box">
             <p id="input-text"></p>
             <input type="text" id="input-field-modal" class="input-field" style="width: 100%; box-sizing: border-box; margin-bottom: 1.5rem;">
+            <select id="archive-type-select" class="input-field" style="width: 100%; box-sizing: border-box; margin-bottom: 1.5rem; display: none;">
+                <option value="zip">Archiwum .zip</option>
+                <option value="tar">Archiwum .tar</option>
+                <option value="rar">Archiwum .rar (wymaga CLI)</option>
+            </select>
             <div style="display: flex; gap: 1rem; justify-content: center;">
                 <button id="input-ok" class="btn primary">Utworz</button>
                 <button id="input-cancel" class="btn">Anuluj</button>

@@ -4,9 +4,11 @@ import {main} from '../models';
 
 export function CleanTempFiles():Promise<string>;
 
+export function CreateArchive(arg1:Array<string>,arg2:string,arg3:string):Promise<void>;
+
 export function CreateItem(arg1:string,arg2:boolean):Promise<void>;
 
-export function FileAction(arg1:string,arg2:string,arg3:string):Promise<void>;
+export function FileAction(arg1:string,arg2:Array<string>,arg3:string):Promise<void>;
 
 export function GetDriveData(arg1:string):Promise<main.RangerState>;
 
@@ -32,12 +34,10 @@ export function OpenFileCustom(arg1:string,arg2:string):Promise<void>;
 
 export function OpenSettingsFile():Promise<void>;
 
-export function OpenTerminal(arg1:string):Promise<void>;
+export function OpenTerminal(arg1:string,arg2:string):Promise<void>;
 
 export function ReadFilePreview(arg1:string):Promise<string>;
 
 export function SaveSettings(arg1:main.AppSettings):Promise<void>;
 
 export function UnzipItem(arg1:string):Promise<void>;
-
-export function ZipItem(arg1:string):Promise<void>;

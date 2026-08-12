@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const inputModal = document.getElementById('input-modal');
     const inputText = document.getElementById('input-text');
     const inputField = document.getElementById('input-field-modal');
+    const archiveTypeSelect = document.getElementById('archive-type-select');
     const inputOk = document.getElementById('input-ok');
     const inputCancel = document.getElementById('input-cancel');
     
@@ -30,13 +31,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     let parentDir = "";
     let currentFiles = [];
     let selectedIndex = 0;
+    let selectedFiles = new Set();
     let driveHistory = ["root"];
     let osType = "";
 
     let localDirState = "";
     let cloudDirState = "root";
 
-    let clipboardFile = null;
+    let clipboardFiles = [];
     let clipboardAction = null; 
     let pendingCreateType = null;
     let fileAssociations = {};
@@ -48,27 +50,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     let isDarkTheme = true;
     let defaultPath = "";
     let confirmDelete = true;
+    let customTerminal = "";
     let shortcuts = {
         copy: "c", cut: "x", paste: "v", delete: "Delete",
-        newFile: "n", newDir: "N", terminal: "t", zip: "z", unzip: "u", dualPane: "d"
+        newFile: "n", newDir: "n", terminal: "t", mark: "z", archive: "p", unzip: "u", dualPane: "d"
     };
+
+    function formatSc(key, needsShift) {
+        if (!key) return "";
+        return needsShift ? `[Shift+${key.toUpperCase()}]` : `[${key.toUpperCase()}]`;
+    }
 
     function updateShortcutUI() {
         const scBar = document.querySelector('.bottom-shortcuts');
         if (scBar) {
             scBar.innerHTML = `
-                <span>[${shortcuts.copy.toUpperCase()}] Kopiuj</span>
-                <span>[${shortcuts.cut.toUpperCase()}] Wytnij</span>
-                <span>[${shortcuts.paste.toUpperCase()}] Wklej</span>
-                <span>[${shortcuts.delete}] Usun</span>
-                <span>[${shortcuts.newFile.toUpperCase()}] Nowy plik</span>
-                <span>[${shortcuts.newDir}] Nowy folder</span>
-                <span>[${shortcuts.terminal.toUpperCase()}] Terminal</span>
-                <span>[${shortcuts.zip.toUpperCase()}] Spakuj</span>
-                <span>[${shortcuts.unzip.toUpperCase()}] Rozpakuj</span>
-                <span>[${shortcuts.dualPane.toUpperCase()}] Dual Pane</span>
-                <span>[Back] / [&larr;] Wstecz</span>
-                <span>[Enter] / [&rarr;] Otworz</span>
+                <span>${formatSc(shortcuts.mark, false)} Zaznacz plik</span>
+                <span>${formatSc(shortcuts.copy, false)} Kopiuj zaznaczone</span>
+                <span>${formatSc(shortcuts.cut, false)} Wytnij</span>
+                <span>${formatSc(shortcuts.paste, false)} Wklej</span>
+                <span>${formatSc(shortcuts.delete, false)} Usun</span>
+                <span>${formatSc(shortcuts.newFile, false)} Nowy plik</span>
+                <span>${formatSc(shortcuts.newDir, true)} Nowy folder</span>
+                <span>${formatSc(shortcuts.terminal, false)} Terminal</span>
+                <span>${formatSc(shortcuts.archive, true)} Spakuj zaznaczone</span>
+                <span>${formatSc(shortcuts.unzip, false)} Rozpakuj</span>
+                <span>${formatSc(shortcuts.dualPane, false)} Dual Pane</span>
+                <span>[Enter] Otworz</span>
             `;
         }
     }
@@ -83,6 +91,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             isDarkTheme = s.isDarkTheme;
             defaultPath = s.defaultPath;
             confirmDelete = s.confirmDelete;
+            customTerminal = s.customTerminal || "";
             if (s.shortcuts) shortcuts = s.shortcuts;
 
             if (defaultPath !== "" && localDirState === "") {
@@ -101,7 +110,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             await window.go.main.App.SaveSettings({
                 appScale: appScale, showHidden: showHidden, showExtensions: showExtensions,
                 foldersFirst: foldersFirst, isDarkTheme: isDarkTheme, defaultPath: defaultPath,
-                confirmDelete: confirmDelete, shortcuts: shortcuts
+                confirmDelete: confirmDelete, customTerminal: customTerminal, shortcuts: shortcuts
             });
             updateShortcutUI();
         } catch(err) {}
@@ -134,6 +143,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     driveSelector.addEventListener('change', (e) => {
         if (currentMode === 'local') {
             selectedIndex = 0;
+            selectedFiles.clear();
             loadRangerView(e.target.value);
         }
         e.target.blur();
@@ -153,23 +163,44 @@ document.addEventListener('DOMContentLoaded', async () => {
         pendingCreateType = type;
         inputText.textContent = message;
         inputField.value = "";
+        
+        if (type === 'archive') {
+            archiveTypeSelect.style.display = 'block';
+        } else {
+            archiveTypeSelect.style.display = 'none';
+        }
+
         inputModal.style.display = 'flex';
         inputField.focus();
     }
 
     inputCancel.addEventListener('click', () => {
         inputModal.style.display = 'none';
+        archiveTypeSelect.style.display = 'none';
         pendingCreateType = null;
     });
 
     inputOk.addEventListener('click', async () => {
         const name = inputField.value.trim();
         if (name && currentDir && pendingCreateType) {
-            const newPath = currentDir + (currentDir.endsWith("\\") || currentDir.endsWith("/") ? "" : (osType === 'windows' ? "\\" : "/")) + name;
             try {
-                const isDir = pendingCreateType === 'dir';
-                await window.go.main.App.CreateItem(newPath, isDir);
+                if (pendingCreateType === 'archive') {
+                    const format = archiveTypeSelect.value;
+                    const filesToZip = Array.from(selectedFiles);
+                    if (filesToZip.length === 0) {
+                        const currentF = currentFiles[selectedIndex];
+                        if (currentF) filesToZip.push(currentF.path);
+                    }
+                    await window.go.main.App.CreateArchive(filesToZip, name, format);
+                    selectedFiles.clear();
+                    showAlert(`Utworzono archiwum: ${name}.${format}`);
+                } else {
+                    const newPath = currentDir + (currentDir.endsWith("\\") || currentDir.endsWith("/") ? "" : (osType === 'windows' ? "\\" : "/")) + name;
+                    const isDir = pendingCreateType === 'dir';
+                    await window.go.main.App.CreateItem(newPath, isDir);
+                }
                 inputModal.style.display = 'none';
+                archiveTypeSelect.style.display = 'none';
                 pendingCreateType = null;
                 loadRangerView(currentDir);
             } catch (err) {
@@ -177,6 +208,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } else {
             inputModal.style.display = 'none';
+            archiveTypeSelect.style.display = 'none';
         }
     });
 
@@ -195,6 +227,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         item.addEventListener('click', (e) => {
             if (currentMode === 'local') localDirState = currentDir;
             if (currentMode === 'cloud-browse') cloudDirState = currentDir;
+            selectedFiles.clear();
 
             navItems.forEach(nav => nav.classList.remove('active'));
             e.target.classList.add('active');
@@ -216,6 +249,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else {
             if (currentMode === 'local') localDirState = currentDir;
             if (currentMode === 'cloud-browse') cloudDirState = currentDir;
+            selectedFiles.clear();
 
             previousMode = currentMode;
             navItems.forEach(nav => nav.classList.remove('active'));
@@ -339,8 +373,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         html += `<div class="ranger-col" id="current-col">`;
         html += currentFilesList.map((f, idx) => {
             const isSelected = idx === selectedIndex ? "selected" : "";
+            const isMarked = selectedFiles.has(f.path) ? "marked" : "";
             const typeClass = f.isDir ? "dir" : "file";
-            return `<div class="ranger-item ${typeClass} ${isSelected}" data-idx="${idx}">${getDisplayName(f)}</div>`;
+            return `<div class="ranger-item ${typeClass} ${isSelected} ${isMarked}" data-idx="${idx}">${getDisplayName(f)}</div>`;
         }).join('');
         html += `</div>`;
 
@@ -359,6 +394,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             item.addEventListener('click', (e) => {
                 const idx = parseInt(e.currentTarget.dataset.idx);
                 const clickedFile = parentFilesList[idx];
+                selectedFiles.clear();
                 handleBackNavigation(currentMode === 'local' ? clickedFile.path : clickedFile.id);
             });
         });
@@ -371,6 +407,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             item.addEventListener('dblclick', (e) => {
                 const idx = parseInt(e.currentTarget.dataset.idx);
                 if (currentFilesList[idx].isDir) {
+                    selectedFiles.clear();
                     handleForwardNavigation(currentFilesList[idx]);
                 } else {
                     handleFileOpen(currentFilesList[idx]);
@@ -415,6 +452,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     item.addEventListener('click', (e) => {
                         const idx = parseInt(e.currentTarget.dataset.idx);
                         const clickedFile = sortedFiles[idx];
+                        selectedFiles.clear();
                         handleForwardNavigation(file, currentMode === 'local' ? clickedFile.path : clickedFile.id);
                     });
                 });
@@ -466,38 +504,58 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (currentMode !== 'local') return showAlert("Opcja dostepna tylko lokalnie");
         showInputPrompt("Podaj nazwe nowego folderu:", "dir");
     });
-    document.getElementById('cm-copy').addEventListener('click', () => handleAction('copy'));
-    document.getElementById('cm-cut').addEventListener('click', () => handleAction('cut'));
-    document.getElementById('cm-paste').addEventListener('click', () => handleAction('paste'));
-    document.getElementById('cm-delete').addEventListener('click', () => handleAction('delete'));
+    document.getElementById('cm-copy').addEventListener('click', () => {
+        handleAction('copy');
+        contextMenu.style.display = 'none';
+    });
+    document.getElementById('cm-cut').addEventListener('click', () => {
+        handleAction('cut');
+        contextMenu.style.display = 'none';
+    });
+    document.getElementById('cm-paste').addEventListener('click', () => {
+        handleAction('paste');
+        contextMenu.style.display = 'none';
+    });
+    document.getElementById('cm-delete').addEventListener('click', () => {
+        handleAction('delete');
+        contextMenu.style.display = 'none';
+    });
 
     async function handleAction(action) {
         if (currentMode !== 'local') return;
-        const file = currentFiles[selectedIndex];
+        
+        let targetFiles = Array.from(selectedFiles);
+        if (targetFiles.length === 0) {
+            const file = currentFiles[selectedIndex];
+            if (file) targetFiles.push(file.path);
+        }
+
+        if (targetFiles.length === 0 && action !== 'paste') return;
         
         try {
             if (action === 'copy' || action === 'cut') {
-                if (file) {
-                    clipboardFile = file.path;
-                    clipboardAction = action;
-                }
+                clipboardFiles = targetFiles;
+                clipboardAction = action;
+                showAlert(`Skopiowano/Wycieto ${targetFiles.length} elementow.`);
+                selectedFiles.clear();
+                loadRangerView(currentDir);
             } else if (action === 'paste') {
-                if (clipboardFile && clipboardAction) {
-                    const fileName = clipboardFile.split(/[/\\]/).pop();
-                    const destPath = currentDir + (currentDir.endsWith("\\") || currentDir.endsWith("/") ? "" : (osType === 'windows' ? "\\" : "/")) + fileName;
-                    await window.go.main.App.FileAction(clipboardAction, clipboardFile, destPath);
+                if (clipboardFiles.length > 0 && clipboardAction) {
+                    await window.go.main.App.FileAction(clipboardAction, clipboardFiles, currentDir);
                     if (clipboardAction === 'cut') {
-                        clipboardFile = null;
+                        clipboardFiles = [];
                         clipboardAction = null;
                     }
+                    selectedFiles.clear();
                     loadRangerView(currentDir);
+                } else {
+                    showAlert("Schowek jest pusty!");
                 }
             } else if (action === 'delete') {
-                if (file) {
-                    if (confirmDelete && !confirm(`Czy na pewno chcesz usunac: ${file.name}?`)) return;
-                    await window.go.main.App.FileAction('delete', file.path, "");
-                    loadRangerView(currentDir);
-                }
+                if (confirmDelete && !confirm(`Czy na pewno chcesz usunac wybrane elementy (${targetFiles.length})?`)) return;
+                await window.go.main.App.FileAction('delete', targetFiles, "");
+                selectedFiles.clear();
+                loadRangerView(currentDir);
             }
         } catch (err) {
             showAlert(err);
@@ -507,16 +565,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     function handleForwardNavigation(file, pathToSelect = null) {
         if (file && file.isDir) {
             if (currentMode === 'cloud-browse') driveHistory.push(file.id);
+            selectedFiles.clear();
             loadRangerView(file.path, pathToSelect);
         }
     }
 
     function handleBackNavigation(pathToSelect = null) {
         if (currentMode === 'local' && parentDir !== "") {
+            selectedFiles.clear();
             loadRangerView(parentDir, pathToSelect || currentDir);
         } else if (currentMode === 'cloud-browse' && driveHistory.length > 1) {
             const oldId = driveHistory.pop();
             const newTarget = driveHistory[driveHistory.length - 1];
+            selectedFiles.clear();
             loadRangerView(newTarget, pathToSelect || oldId);
         }
     }
@@ -557,7 +618,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 selectedIndex--;
                 loadRangerView(currentDir);
             }
-        } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
+        } else if (e.key === 'Enter') {
             e.preventDefault();
             const file = currentFiles[selectedIndex];
             if (file && file.isDir) {
@@ -565,45 +626,64 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else if (file && !file.isDir) {
                 handleFileOpen(file);
             }
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            const file = currentFiles[selectedIndex];
+            if (file && file.isDir) {
+                handleForwardNavigation(file);
+            }
         } else if (e.key === 'ArrowLeft' || e.key === 'Backspace') {
             e.preventDefault();
             handleBackNavigation();
-        } else if (e.key === shortcuts.copy && !e.ctrlKey) {
-            e.preventDefault(); handleAction('copy');
-        } else if (e.key === shortcuts.cut && !e.ctrlKey) {
-            e.preventDefault(); handleAction('cut');
-        } else if (e.key === shortcuts.paste && !e.ctrlKey) {
-            e.preventDefault(); handleAction('paste');
-        } else if (e.key === shortcuts.delete) {
-            e.preventDefault(); handleAction('delete');
-        } else if (e.key === shortcuts.newFile) {
-            e.preventDefault();
-            if (currentMode === 'local') showInputPrompt("Podaj nazwe nowego pliku:", "file");
-        } else if (e.key === shortcuts.newDir) {
-            e.preventDefault();
-            if (currentMode === 'local') showInputPrompt("Podaj nazwe nowego folderu:", "dir");
-        } else if (e.key === shortcuts.terminal && currentMode === 'local' && currentDir) {
-            e.preventDefault();
-            await window.go.main.App.OpenTerminal(currentDir);
-        } else if (e.key === shortcuts.zip && currentMode === 'local') {
+        } else if (e.key.toLowerCase() === shortcuts.mark.toLowerCase() && !e.ctrlKey) {
             e.preventDefault();
             const file = currentFiles[selectedIndex];
             if (file) {
-                try {
-                    await window.go.main.App.ZipItem(file.path);
-                    loadRangerView(currentDir);
-                } catch(err) { showAlert(err); }
+                if (selectedFiles.has(file.path)) {
+                    selectedFiles.delete(file.path);
+                } else {
+                    selectedFiles.add(file.path);
+                }
+                if (selectedIndex < currentFiles.length - 1) {
+                    selectedIndex++;
+                }
+                loadRangerView(currentDir);
             }
-        } else if (e.key === shortcuts.unzip && currentMode === 'local') {
+        } else if (e.key.toLowerCase() === shortcuts.copy.toLowerCase() && !e.ctrlKey) {
+            e.preventDefault(); handleAction('copy');
+        } else if (e.key.toLowerCase() === shortcuts.cut.toLowerCase() && !e.ctrlKey) {
+            e.preventDefault(); handleAction('cut');
+        } else if (e.key.toLowerCase() === shortcuts.paste.toLowerCase() && !e.ctrlKey) {
+            e.preventDefault(); handleAction('paste');
+        } else if (e.key === shortcuts.delete) {
+            e.preventDefault(); handleAction('delete');
+        } else if (e.key.toLowerCase() === shortcuts.newFile.toLowerCase() && !e.shiftKey) {
+            e.preventDefault();
+            if (currentMode === 'local') showInputPrompt("Podaj nazwe nowego pliku:", "file");
+        } else if (e.key.toLowerCase() === shortcuts.newDir.toLowerCase() && e.shiftKey) {
+            e.preventDefault();
+            if (currentMode === 'local') showInputPrompt("Podaj nazwe nowego folderu:", "dir");
+        } else if (e.key.toLowerCase() === shortcuts.terminal.toLowerCase() && currentMode === 'local' && currentDir) {
+            e.preventDefault();
+            await window.go.main.App.OpenTerminal(currentDir, customTerminal);
+        } else if (e.key.toLowerCase() === shortcuts.archive.toLowerCase() && e.shiftKey && currentMode === 'local') {
+            e.preventDefault();
+            if (selectedFiles.size === 0 && currentFiles[selectedIndex]) {
+                selectedFiles.add(currentFiles[selectedIndex].path);
+            }
+            if (selectedFiles.size > 0) {
+                showInputPrompt("Podaj nazwe archiwum (bez rozszerzenia):", "archive");
+            }
+        } else if (e.key.toLowerCase() === shortcuts.unzip.toLowerCase() && currentMode === 'local') {
             e.preventDefault();
             const file = currentFiles[selectedIndex];
-            if (file && !file.isDir && file.path.endsWith('.zip')) {
+            if (file && !file.isDir && (file.path.endsWith('.zip') || file.path.endsWith('.tar') || file.path.endsWith('.rar'))) {
                 try {
                     await window.go.main.App.UnzipItem(file.path);
                     loadRangerView(currentDir);
                 } catch(err) { showAlert(err); }
             }
-        } else if (e.key === shortcuts.dualPane) {
+        } else if (e.key.toLowerCase() === shortcuts.dualPane.toLowerCase()) {
             e.preventDefault();
             showAlert("Opcja Dual Pane jest zaplanowana do aktywacji w kolejnej wersji, aby zapewnic stabilnosc interfejsu Ranger.");
         }
@@ -707,19 +787,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         
                         <h3>Opcje wygladu</h3>
                         <div style="margin-bottom: 1.5rem;">
-                            <label class="checkbox-container" style="margin-bottom: 1rem;">
-                                <input type="checkbox" id="settings-show-hidden-cb">
-                                Pokaz ukryte pliki
-                            </label>
-                            <label class="checkbox-container" style="margin-bottom: 1rem;">
-                                <input type="checkbox" id="settings-show-ext-cb">
-                                Pokaz rozszerzenia plikow
-                            </label>
-                            <label class="checkbox-container" style="margin-bottom: 1rem;">
-                                <input type="checkbox" id="settings-folders-first-cb">
-                                Katalogi na poczatku
-                            </label>
-                            <label style="display: block; margin-bottom: 0.5rem; font-weight: bold; margin-top: 1rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: bold;">
                                 Skala interfejsu: <span id="scale-val-display" style="color: var(--accent);">${appScale}x</span>
                             </label>
                             <input type="range" id="settings-scale-slider" min="0.5" max="2.0" step="0.1" value="${appScale}" style="width: 20rem; max-width: 100%;">
@@ -735,19 +803,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 Domyslny katalog startowy (zostaw puste dla domowego):
                             </label>
                             <input type="text" id="settings-default-path" class="input-field" value="${defaultPath}" placeholder="np. C:\\Users lub /home">
+                            
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: bold;">
+                                Domyslny terminal (zostaw puste dla systemowego):
+                            </label>
+                            <input type="text" id="settings-custom-terminal" class="input-field" value="${customTerminal}" placeholder="np. alacritty, kitty, wt">
                         </div>
 
                         <h3>Skroty Klawiszowe</h3>
                         <div style="margin-bottom: 2rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                            <div class="shortcut-item"><span>Zaznacz:</span> <input type="text" id="sc-mark" class="shortcut-input" value="${shortcuts.mark}"></div>
                             <div class="shortcut-item"><span>Kopiuj:</span> <input type="text" id="sc-copy" class="shortcut-input" value="${shortcuts.copy}"></div>
                             <div class="shortcut-item"><span>Wytnij:</span> <input type="text" id="sc-cut" class="shortcut-input" value="${shortcuts.cut}"></div>
                             <div class="shortcut-item"><span>Wklej:</span> <input type="text" id="sc-paste" class="shortcut-input" value="${shortcuts.paste}"></div>
                             <div class="shortcut-item"><span>Usun:</span> <input type="text" id="sc-delete" class="shortcut-input" value="${shortcuts.delete}"></div>
                             <div class="shortcut-item"><span>Nowy Plik:</span> <input type="text" id="sc-newFile" class="shortcut-input" value="${shortcuts.newFile}"></div>
-                            <div class="shortcut-item"><span>Nowy Folder:</span> <input type="text" id="sc-newDir" class="shortcut-input" value="${shortcuts.newDir}"></div>
+                            <div class="shortcut-item"><span>Nowy Folder (wymaga Shift+):</span> <input type="text" id="sc-newDir" class="shortcut-input" value="${shortcuts.newDir}"></div>
                             <div class="shortcut-item"><span>Terminal:</span> <input type="text" id="sc-terminal" class="shortcut-input" value="${shortcuts.terminal}"></div>
-                            <div class="shortcut-item"><span>Spakuj Zip:</span> <input type="text" id="sc-zip" class="shortcut-input" value="${shortcuts.zip}"></div>
-                            <div class="shortcut-item"><span>Rozpakuj Zip:</span> <input type="text" id="sc-unzip" class="shortcut-input" value="${shortcuts.unzip}"></div>
+                            <div class="shortcut-item"><span>Spakuj (wymaga Shift+):</span> <input type="text" id="sc-archive" class="shortcut-input" value="${shortcuts.archive}"></div>
+                            <div class="shortcut-item"><span>Rozpakuj:</span> <input type="text" id="sc-unzip" class="shortcut-input" value="${shortcuts.unzip}"></div>
                             <div class="shortcut-item"><span>Dual Pane (wkrótce):</span> <input type="text" id="sc-dualPane" class="shortcut-input" value="${shortcuts.dualPane}"></div>
                             <button class="btn primary" id="save-shortcuts-btn" style="width: 250px; margin-top: 10px;">Zapisz Skroty</button>
                         </div>
@@ -760,27 +834,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 `;
                 setTimeout(() => {
-                    const hiddenCb = document.getElementById('settings-show-hidden-cb');
-                    hiddenCb.checked = showHidden;
-                    hiddenCb.addEventListener('change', (e) => {
-                        showHidden = e.target.checked;
-                        saveSettings();
-                    });
-
-                    const extCb = document.getElementById('settings-show-ext-cb');
-                    extCb.checked = showExtensions;
-                    extCb.addEventListener('change', (e) => {
-                        showExtensions = e.target.checked;
-                        saveSettings();
-                    });
-
-                    const foldersCb = document.getElementById('settings-folders-first-cb');
-                    foldersCb.checked = foldersFirst;
-                    foldersCb.addEventListener('change', (e) => {
-                        foldersFirst = e.target.checked;
-                        saveSettings();
-                    });
-
                     const slider = document.getElementById('settings-scale-slider');
                     const scaleDisplay = document.getElementById('scale-val-display');
                     
@@ -808,6 +861,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                         saveSettings();
                     });
 
+                    const customTerminalInput = document.getElementById('settings-custom-terminal');
+                    if (customTerminalInput) {
+                        customTerminalInput.addEventListener('change', (e) => {
+                            customTerminal = e.target.value;
+                            saveSettings();
+                        });
+                    }
+
                     document.getElementById('settings-open-config').addEventListener('click', async () => {
                         try {
                             await window.go.main.App.OpenSettingsFile();
@@ -823,6 +884,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
 
                     document.getElementById('save-shortcuts-btn').addEventListener('click', async () => {
+                        shortcuts.mark = document.getElementById('sc-mark').value;
                         shortcuts.copy = document.getElementById('sc-copy').value;
                         shortcuts.cut = document.getElementById('sc-cut').value;
                         shortcuts.paste = document.getElementById('sc-paste').value;
@@ -830,7 +892,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         shortcuts.newFile = document.getElementById('sc-newFile').value;
                         shortcuts.newDir = document.getElementById('sc-newDir').value;
                         shortcuts.terminal = document.getElementById('sc-terminal').value;
-                        shortcuts.zip = document.getElementById('sc-zip').value;
+                        shortcuts.archive = document.getElementById('sc-archive').value;
                         shortcuts.unzip = document.getElementById('sc-unzip').value;
                         shortcuts.dualPane = document.getElementById('sc-dualPane').value;
                         await saveSettings();

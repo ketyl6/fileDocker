@@ -8,6 +8,7 @@ export namespace main {
 	    isDarkTheme: boolean;
 	    defaultPath: string;
 	    confirmDelete: boolean;
+	    customTerminal: string;
 	    shortcuts: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
@@ -23,6 +24,7 @@ export namespace main {
 	        this.isDarkTheme = source["isDarkTheme"];
 	        this.defaultPath = source["defaultPath"];
 	        this.confirmDelete = source["confirmDelete"];
+	        this.customTerminal = source["customTerminal"];
 	        this.shortcuts = source["shortcuts"];
 	    }
 	}
