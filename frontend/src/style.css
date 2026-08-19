@@ -6,7 +6,28 @@ html {
     font-size: calc(16px * var(--app-scale));
 }
 
+::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-dark);
+    border-left: 1px solid var(--border);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--selected-bg);
+    border-radius: 6px;
+    border: 3px solid var(--bg-dark);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+}
+
 body.dark-theme {
+    color-scheme: dark;
     --bg-dark: #000000;
     --bg-panel: #111111;
     --text-main: #e0e0e0;
@@ -26,6 +47,7 @@ body.dark-theme {
 }
 
 body.light-theme {
+    color-scheme: light;
     --bg-dark: #f5f5f5;
     --bg-panel: #ffffff;
     --text-main: #111111;
@@ -163,15 +185,34 @@ body {
     color: var(--accent);
 }
 
-.drive-select {
+.input-field, select {
+    padding: clamp(6px, 1vh, 8px);
+    margin-bottom: 10px;
+    width: 300px;
+    display: block;
+    background-color: var(--bg-panel);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    font-size: clamp(10px, 1.1vw, 15px);
+    font-family: monospace;
+    outline: none;
+}
+
+select {
+    cursor: pointer;
+}
+
+select option {
     background-color: var(--bg-panel);
     color: var(--text-main);
-    border: 1px solid var(--border);
-    padding: 4px 8px;
     font-family: monospace;
+}
+
+.drive-select {
+    width: auto;
+    margin-bottom: 0;
+    padding: 4px 8px;
     font-size: clamp(10px, 1vw, 14px);
-    outline: none;
-    cursor: pointer;
 }
 
 .topbar h2 {
@@ -194,6 +235,12 @@ body {
 .btn.primary {
     background-color: var(--accent);
     color: #282a36;
+    font-weight: bold;
+}
+
+.btn.danger {
+    background-color: #ff5555;
+    color: #ffffff;
     font-weight: bold;
 }
 
@@ -228,7 +275,7 @@ body {
 }
 
 .ranger-item {
-    padding: clamp(2px, 0.5vh, 6px) clamp(5px, 1vw, 10px);
+    padding: clamp(4px, 0.8vh, 8px) clamp(8px, 1vw, 12px);
     cursor: pointer;
     white-space: nowrap;
     overflow: hidden;
@@ -236,7 +283,7 @@ body {
     user-select: none;
     flex-shrink: 0;
     line-height: 1.5;
-    font-size: 0.9rem;
+    font-size: calc(clamp(12px, 1.1vw, 16px) * calc(0.5 + 0.5 * var(--app-scale)));
     border: 1px solid transparent;
 }
 
@@ -261,10 +308,10 @@ body {
 }
 
 .preview-box {
-    padding: clamp(5px, 1vh, 10px);
+    padding: clamp(10px, 2vh, 15px);
     white-space: pre-wrap;
     word-break: break-all;
-    font-size: clamp(9px, 1vw, 14px);
+    font-size: calc(clamp(11px, 1vw, 15px) * calc(0.5 + 0.5 * var(--app-scale)));
     overflow-y: auto;
     transform: translateZ(0);
     backface-visibility: hidden;
@@ -288,17 +335,6 @@ body {
     overflow-y: auto;
     transform: translateZ(0);
     backface-visibility: hidden;
-}
-
-.input-field {
-    padding: clamp(6px, 1vh, 8px);
-    margin-bottom: 10px;
-    width: 300px;
-    display: block;
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    color: var(--text-main);
-    font-size: clamp(10px, 1.1vw, 15px);
 }
 
 .context-menu {

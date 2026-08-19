@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,7 +15,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -36,6 +34,7 @@ type AppSettings struct {
 	CustomTerminal   string            `json:"customTerminal"`
 	CacheCleanupDays int               `json:"cacheCleanupDays"`
 	ProjectsPath     string            `json:"projectsPath"`
+	CustomCleanPaths []string          `json:"customCleanPaths"`
 	Shortcuts        map[string]string `json:"shortcuts"`
 }
 
@@ -101,7 +100,7 @@ func (a *App) CleanAppCache() (string, error) {
 		os.RemoveAll(filepath.Join(cacheDir, e.Name()))
 		count++
 	}
-	return fmt.Sprintf("Usunieto %d plikow", count), nil
+	return fmt.Sprintf("Wyczyszczono pamięć podręczną.\nUsunięto %d plików z cache Google Drive.", count), nil
 }
 
 type FileInfo struct {
@@ -132,22 +131,6 @@ func (a *App) GetDrives() []string {
 		}
 	}
 	return drives
-}
-
-func isFileHidden(path string, name string) bool {
-	if len(name) > 0 && name[0] == '.' {
-		return true
-	}
-	if runtime.GOOS == "windows" {
-		ptr, err := syscall.UTF16PtrFromString(path)
-		if err == nil {
-			attrs, err := syscall.GetFileAttributes(ptr)
-			if err == nil {
-				return attrs&syscall.FILE_ATTRIBUTE_HIDDEN != 0
-			}
-		}
-	}
-	return false
 }
 
 func (a *App) GetRangerData(targetPath string, showHidden bool) (RangerState, error) {
@@ -239,7 +222,7 @@ func (a *App) FileAction(action string, sources []string, destination string) er
 			if info != nil && info.IsDir() {
 				rel, err := filepath.Rel(src, destination)
 				if err == nil && !strings.HasPrefix(rel, "..") {
-					return fmt.Errorf("blad folderu")
+					return fmt.Errorf("nie mozna wkleic folderu do jego wlasnego wnetrza")
 				}
 			}
 			dest := filepath.Join(destination, filepath.Base(src))
@@ -255,7 +238,7 @@ func (a *App) FileAction(action string, sources []string, destination string) er
 			if info != nil && info.IsDir() {
 				rel, err := filepath.Rel(src, destination)
 				if err == nil && !strings.HasPrefix(rel, "..") {
-					return fmt.Errorf("blad przenoszenia")
+					return fmt.Errorf("nie mozna przeniesc folderu do jego wlasnego wnetrza")
 				}
 			}
 			dest := filepath.Join(destination, filepath.Base(src))
@@ -341,7 +324,7 @@ func copyFile(src, dst string) error {
 
 func (a *App) CreateArchive(srcPaths []string, destName string, format string) error {
 	if len(srcPaths) == 0 {
-		return fmt.Errorf("brak plikow")
+		return fmt.Errorf("brak plikow do spakowania")
 	}
 	baseDir := filepath.Dir(srcPaths[0])
 	ext := "." + format
@@ -357,7 +340,7 @@ func (a *App) CreateArchive(srcPaths []string, destName string, format string) e
 	case "rar":
 		return createRar(srcPaths, destPath, baseDir)
 	default:
-		return fmt.Errorf("nieobslugiwany format")
+		return fmt.Errorf("nieobslugiwany format archiwum")
 	}
 }
 
@@ -467,7 +450,7 @@ func createRar(srcPaths []string, destPath string, baseDir string) error {
 	cmd.Dir = baseDir
 	err := cmd.Run()
 	if err != nil {
-		return fmt.Errorf("blad RAR: %v", err)
+		return fmt.Errorf("blad tworzenia RAR: %v", err)
 	}
 	return nil
 }
@@ -487,7 +470,7 @@ func (a *App) UnzipItem(src string) error {
 	case ".rar":
 		return extractRar(src, dest)
 	default:
-		return fmt.Errorf("nieobslugiwany format")
+		return fmt.Errorf("nieobslugiwany format do wypakowania: %s", ext)
 	}
 }
 
@@ -558,7 +541,7 @@ func extractRar(src string, dest string) error {
 		cmd = exec.Command("rar", "x", "-y", src, dest+string(filepath.Separator))
 		err = cmd.Run()
 		if err != nil {
-			return fmt.Errorf("blad RAR: %v", err)
+			return fmt.Errorf("blad wypakowywania RAR: %v", err)
 		}
 	}
 	return nil
@@ -591,15 +574,17 @@ func (a *App) OpenTerminal(dir string, customTerm string) error {
 }
 
 func (a *App) CleanTempFiles() (string, error) {
+	if runtime.GOOS != "windows" {
+		return "Oczyszczanie plików tymczasowych systemu jest dostępne tylko na systemie Windows.", nil
+	}
+
 	var dirs []string
 	dirs = append(dirs, os.TempDir())
-	if runtime.GOOS == "windows" {
-		dirs = append(dirs, filepath.Join(os.Getenv("WINDIR"), "Temp"))
-		dirs = append(dirs, filepath.Join(os.Getenv("LOCALAPPDATA"), "Temp"))
-	} else if runtime.GOOS == "linux" {
-		dirs = append(dirs, "/tmp", "/var/tmp")
-	}
+	dirs = append(dirs, filepath.Join(os.Getenv("WINDIR"), "Temp"))
+	dirs = append(dirs, filepath.Join(os.Getenv("LOCALAPPDATA"), "Temp"))
+
 	deletedCount := 0
+	var cleanedDirs []string
 	for _, d := range dirs {
 		if d == "" {
 			continue
@@ -608,6 +593,7 @@ func (a *App) CleanTempFiles() (string, error) {
 		if err != nil {
 			continue
 		}
+		cleanedDirs = append(cleanedDirs, d)
 		for _, entry := range entries {
 			fullPath := filepath.Join(d, entry.Name())
 			err := os.RemoveAll(fullPath)
@@ -616,7 +602,46 @@ func (a *App) CleanTempFiles() (string, error) {
 			}
 		}
 	}
-	return fmt.Sprintf("Usunieto Temp: %d", deletedCount), nil
+	return fmt.Sprintf("Wyczyszczono tymczasowe pliki systemu.\nUsunięto %d elementów.\n\nSprawdzone lokalizacje:\n%s", deletedCount, strings.Join(cleanedDirs, "\n")), nil
+}
+
+func (a *App) CleanCustomPaths() (string, error) {
+	if runtime.GOOS != "windows" {
+		return "Oczyszczanie niestandardowych folderów jest dostępne tylko na systemie Windows.", nil
+	}
+
+	settings := a.GetSettings()
+	if len(settings.CustomCleanPaths) == 0 {
+		return "Brak zdefiniowanych niestandardowych folderów w Ustawieniach.", nil
+	}
+
+	deletedCount := 0
+	var cleanedDirs []string
+	for _, d := range settings.CustomCleanPaths {
+		if d == "" {
+			continue
+		}
+		info, err := os.Stat(d)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		entries, err := os.ReadDir(d)
+		if err != nil {
+			continue
+		}
+		cleanedDirs = append(cleanedDirs, d)
+		for _, entry := range entries {
+			fullPath := filepath.Join(d, entry.Name())
+			err := os.RemoveAll(fullPath)
+			if err == nil {
+				deletedCount++
+			}
+		}
+	}
+	if len(cleanedDirs) == 0 {
+		return "Nie znaleziono i nie wyczyszczono żadnych prawidłowych folderów zdefiniowanych w ustawieniach.", nil
+	}
+	return fmt.Sprintf("Wyczyszczono foldery niestandardowe.\nUsunięto %d elementów.\n\nSprawdzone lokalizacje:\n%s", deletedCount, strings.Join(cleanedDirs, "\n")), nil
 }
 
 func getDockerConfigDir() (string, error) {
@@ -639,19 +664,22 @@ func (a *App) GetSettings() AppSettings {
 		CustomTerminal:   "",
 		CacheCleanupDays: 7,
 		ProjectsPath:     "",
+		CustomCleanPaths: []string{},
 		Shortcuts: map[string]string{
-			"copy":     "c",
-			"cut":      "x",
-			"paste":    "v",
-			"delete":   "Delete",
-			"newFile":  "n",
-			"newDir":   "n",
-			"terminal": "t",
-			"mark":     "z",
-			"archive":  "p",
-			"unzip":    "u",
-			"dualPane": "d",
-			"download": "s",
+			"copy":        "c",
+			"cut":         "x",
+			"paste":       "v",
+			"delete":      "Delete",
+			"newFile":     "n",
+			"newDir":      "n",
+			"terminal":    "t",
+			"mark":        "z",
+			"archive":     "p",
+			"unzip":       "u",
+			"dualPane":    "d",
+			"download":    "s",
+			"switchDrive": "w",
+			"settings":    ",",
 		},
 	}
 	cfgDir, err := getDockerConfigDir()
@@ -769,13 +797,13 @@ func (a *App) LogoutGoogle() error {
 
 func (a *App) LoginGoogle(clientID string, clientSecret string) (string, error) {
 	if clientID == "" || clientSecret == "" {
-		return "", fmt.Errorf("brak danych")
+		return "", fmt.Errorf("brak danych logowania")
 	}
 	codeChan := make(chan string)
 	srv := &http.Server{Addr: "127.0.0.1:8080"}
 	http.HandleFunc("/oauth2callback", func(w http.ResponseWriter, r *http.Request) {
 		code := r.URL.Query().Get("code")
-		fmt.Fprintf(w, "<html><body>Zakonczono.</body></html>")
+		fmt.Fprintf(w, "<html><body>Autoryzacja zakonczona.</body></html>")
 		go func() { codeChan <- code }()
 	})
 	go func() {
@@ -817,7 +845,7 @@ func (a *App) LoginGoogle(clientID string, clientSecret string) (string, error) 
 			tokenFile := filepath.Join(cfgDir, "google_token.txt")
 			os.WriteFile(tokenFile, []byte(token), 0600)
 		}
-		return "Zalogowano", nil
+		return "Zalogowano pomyslnie", nil
 	}
 	return "", fmt.Errorf("blad autoryzacji")
 }
@@ -846,7 +874,7 @@ func (a *App) GetDriveData(folderId string) (RangerState, error) {
 			return RangerState{}, fmt.Errorf("sesja wygasla")
 		}
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return RangerState{}, fmt.Errorf("odmowa API: %s", string(bodyBytes))
+		return RangerState{}, fmt.Errorf("odmowa API Google: %s", string(bodyBytes))
 	}
 	var res struct {
 		Files []struct {
@@ -929,73 +957,9 @@ func (a *App) DeleteDriveFile(fileId string) error {
 	return nil
 }
 
-type NetworkDevice struct {
-	IP   string `json:"ip"`
-	Type string `json:"type"`
-}
-
-func (a *App) ScanLocalNetwork() []NetworkDevice {
-	var devices []NetworkDevice
-	var mutex sync.Mutex
-	var wg sync.WaitGroup
-	baseIP := "192.168.1"
-	addrs, err := net.InterfaceAddrs()
-	if err == nil {
-		for _, addr := range addrs {
-			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil {
-				parts := strings.Split(ipnet.IP.String(), ".")
-				if len(parts) == 4 {
-					baseIP = fmt.Sprintf("%s.%s.%s", parts[0], parts[1], parts[2])
-					break
-				}
-			}
-		}
-	}
-	for i := 1; i <= 254; i++ {
-		targetIP := fmt.Sprintf("%s.%d", baseIP, i)
-		wg.Add(1)
-		go func(ip string) {
-			defer wg.Done()
-			connSMB, err := net.DialTimeout("tcp", ip+":445", 400*time.Millisecond)
-			if err == nil {
-				connSMB.Close()
-				mutex.Lock()
-				devices = append(devices, NetworkDevice{IP: ip, Type: "SMB"})
-				mutex.Unlock()
-			}
-			connFTP, err := net.DialTimeout("tcp", ip+":21", 400*time.Millisecond)
-			if err == nil {
-				connFTP.Close()
-				mutex.Lock()
-				devices = append(devices, NetworkDevice{IP: ip, Type: "FTP"})
-				mutex.Unlock()
-			}
-		}(targetIP)
-	}
-	wg.Wait()
-	return devices
-}
-
-var netHost, netUser, netPass, netType string
-
-func (a *App) ConnectNetwork(host, user, pass, nType string) error {
-	netHost = host
-	netUser = user
-	netPass = pass
-	netType = nType
-	return nil
-}
-
-func (a *App) GetNetworkData(path string) (RangerState, error) {
-	return RangerState{}, fmt.Errorf("Wymaga zaleznosci")
-}
-
-func (a *App) DownloadFromNetwork(remotePath string, fileName string, target string) (string, error) {
-	return "", fmt.Errorf("Wymaga zaleznosci")
-}
-
-func (a *App) DeleteNetworkFile(remotePath string) error {
-	return fmt.Errorf("Brak uprawnien")
+func (a *App) IsGitInstalled() bool {
+	_, err := exec.LookPath("git")
+	return err == nil
 }
 
 type GitRepo struct {
@@ -1099,6 +1063,24 @@ func (a *App) CheckoutGitCommit(path, hash string) error {
 	return nil
 }
 
+func (a *App) GetLocalGitBranches(path string) ([]string, error) {
+	cmd := exec.Command("git", "branch", "--format=%(refname:short)")
+	cmd.Dir = path
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var branches []string
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			branches = append(branches, line)
+		}
+	}
+	return branches, nil
+}
+
 type RemoteRepo struct {
 	Name        string `json:"name"`
 	FullName    string `json:"fullName"`
@@ -1182,7 +1164,7 @@ func (a *App) SearchGitHub(query string) ([]RemoteRepo, error) {
 	wg.Wait()
 
 	if len(repos) == 0 {
-		return nil, fmt.Errorf("brak wynikow dla repozytorium ani uzytkownika")
+		return nil, fmt.Errorf("brak wynikow")
 	}
 
 	return repos, nil

@@ -11,6 +11,7 @@ export namespace main {
 	    customTerminal: string;
 	    cacheCleanupDays: number;
 	    projectsPath: string;
+	    customCleanPaths: string[];
 	    shortcuts: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
@@ -29,6 +30,7 @@ export namespace main {
 	        this.customTerminal = source["customTerminal"];
 	        this.cacheCleanupDays = source["cacheCleanupDays"];
 	        this.projectsPath = source["projectsPath"];
+	        this.customCleanPaths = source["customCleanPaths"];
 	        this.shortcuts = source["shortcuts"];
 	    }
 	}
@@ -82,20 +84,6 @@ export namespace main {
 	        this.path = source["path"];
 	        this.branch = source["branch"];
 	        this.status = source["status"];
-	    }
-	}
-	export class NetworkDevice {
-	    ip: string;
-	    type: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new NetworkDevice(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.ip = source["ip"];
-	        this.type = source["type"];
 	    }
 	}
 	export class RangerState {

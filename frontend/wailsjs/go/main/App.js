@@ -10,16 +10,16 @@ export function CleanAppCache() {
   return window['go']['main']['App']['CleanAppCache']();
 }
 
+export function CleanCustomPaths() {
+  return window['go']['main']['App']['CleanCustomPaths']();
+}
+
 export function CleanTempFiles() {
   return window['go']['main']['App']['CleanTempFiles']();
 }
 
 export function CloneRemoteRepo(arg1, arg2, arg3) {
   return window['go']['main']['App']['CloneRemoteRepo'](arg1, arg2, arg3);
-}
-
-export function ConnectNetwork(arg1, arg2, arg3, arg4) {
-  return window['go']['main']['App']['ConnectNetwork'](arg1, arg2, arg3, arg4);
 }
 
 export function CreateArchive(arg1, arg2, arg3) {
@@ -34,16 +34,8 @@ export function DeleteDriveFile(arg1) {
   return window['go']['main']['App']['DeleteDriveFile'](arg1);
 }
 
-export function DeleteNetworkFile(arg1) {
-  return window['go']['main']['App']['DeleteNetworkFile'](arg1);
-}
-
 export function DownloadFromDrive(arg1, arg2, arg3) {
   return window['go']['main']['App']['DownloadFromDrive'](arg1, arg2, arg3);
-}
-
-export function DownloadFromNetwork(arg1, arg2, arg3) {
-  return window['go']['main']['App']['DownloadFromNetwork'](arg1, arg2, arg3);
 }
 
 export function FileAction(arg1, arg2, arg3) {
@@ -74,8 +66,8 @@ export function GetGitHubBranches(arg1) {
   return window['go']['main']['App']['GetGitHubBranches'](arg1);
 }
 
-export function GetNetworkData(arg1) {
-  return window['go']['main']['App']['GetNetworkData'](arg1);
+export function GetLocalGitBranches(arg1) {
+  return window['go']['main']['App']['GetLocalGitBranches'](arg1);
 }
 
 export function GetOS() {
@@ -92,6 +84,10 @@ export function GetSettings() {
 
 export function IsDriveAuthenticated() {
   return window['go']['main']['App']['IsDriveAuthenticated']();
+}
+
+export function IsGitInstalled() {
+  return window['go']['main']['App']['IsGitInstalled']();
 }
 
 export function LoginGoogle(arg1, arg2) {
@@ -128,10 +124,6 @@ export function SaveSettings(arg1) {
 
 export function ScanGitRepos(arg1) {
   return window['go']['main']['App']['ScanGitRepos'](arg1);
-}
-
-export function ScanLocalNetwork() {
-  return window['go']['main']['App']['ScanLocalNetwork']();
 }
 
 export function SearchGitHub(arg1) {

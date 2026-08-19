@@ -6,11 +6,11 @@ export function CheckoutGitCommit(arg1:string,arg2:string):Promise<void>;
 
 export function CleanAppCache():Promise<string>;
 
+export function CleanCustomPaths():Promise<string>;
+
 export function CleanTempFiles():Promise<string>;
 
 export function CloneRemoteRepo(arg1:string,arg2:string,arg3:string):Promise<void>;
-
-export function ConnectNetwork(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 
 export function CreateArchive(arg1:Array<string>,arg2:string,arg3:string):Promise<void>;
 
@@ -18,11 +18,7 @@ export function CreateItem(arg1:string,arg2:boolean):Promise<void>;
 
 export function DeleteDriveFile(arg1:string):Promise<void>;
 
-export function DeleteNetworkFile(arg1:string):Promise<void>;
-
 export function DownloadFromDrive(arg1:string,arg2:string,arg3:string):Promise<string>;
-
-export function DownloadFromNetwork(arg1:string,arg2:string,arg3:string):Promise<string>;
 
 export function FileAction(arg1:string,arg2:Array<string>,arg3:string):Promise<void>;
 
@@ -38,7 +34,7 @@ export function GetGitHistory(arg1:string):Promise<Array<main.GitCommit>>;
 
 export function GetGitHubBranches(arg1:string):Promise<Array<string>>;
 
-export function GetNetworkData(arg1:string):Promise<main.RangerState>;
+export function GetLocalGitBranches(arg1:string):Promise<Array<string>>;
 
 export function GetOS():Promise<string>;
 
@@ -47,6 +43,8 @@ export function GetRangerData(arg1:string,arg2:boolean):Promise<main.RangerState
 export function GetSettings():Promise<main.AppSettings>;
 
 export function IsDriveAuthenticated():Promise<boolean>;
+
+export function IsGitInstalled():Promise<boolean>;
 
 export function LoginGoogle(arg1:string,arg2:string):Promise<string>;
 
@@ -65,8 +63,6 @@ export function ReadFilePreview(arg1:string):Promise<string>;
 export function SaveSettings(arg1:main.AppSettings):Promise<void>;
 
 export function ScanGitRepos(arg1:string):Promise<Array<main.GitRepo>>;
-
-export function ScanLocalNetwork():Promise<Array<main.NetworkDevice>>;
 
 export function SearchGitHub(arg1:string):Promise<Array<main.RemoteRepo>>;
 

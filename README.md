@@ -1,4 +1,4 @@
-# fileDocker ver. alpha3
+# fileDocker ver. alpha3.1
 
 **fileDocker** is a lightweight, cross-platform desktop file explorer built with [Wails](https://wails.io/) (Go backend + HTML/CSS/JS frontend). It's designed as a fast, keyboard-driven alternative to the default OS file manager, inspired by tools like **Ranger** and **Total Commander**.
 
@@ -140,12 +140,10 @@ wails build -clean
 
 The current UI strings are in **Polish**. Internationalization has not been implemented yet.
 
-## Known limitations (alpha3)
+## Known limitations (alpha3.1)
 
 - Dual Pane mode is present in settings/shortcuts but non-functional
-- No SMB/FTP or other network-share support - dropped in favor of the Git Projects tab
 - `.rar` archiving/extraction depends on an external `rar` binary being installed and on `PATH`
-- Git Projects features depend on a local `git` client being installed and on `PATH`
 - No automated tests
 - Single-language (Polish) UI only
 

@@ -1,3 +1,15 @@
+document.addEventListener('wheel', (e) => {
+    if (e.ctrlKey) {
+        e.preventDefault();
+    }
+}, { passive: false });
+
+document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
+        e.preventDefault();
+    }
+});
+
 document.addEventListener('contextmenu', (e) => {
     e.preventDefault();
 });
@@ -52,6 +64,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     let cloneUrlCache = "";
     let cloneBranchCache = "";
+    let customCleanPaths = [];
 
     let appScale = 1.0;
     let showHidden = false;
@@ -65,7 +78,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     let projectsPath = "";
     let shortcuts = {
         copy: "c", cut: "x", paste: "v", delete: "Delete",
-        newFile: "n", newDir: "n", terminal: "t", mark: "z", archive: "p", unzip: "u", dualPane: "d", download: "s"
+        newFile: "n", newDir: "n", terminal: "t", mark: "z", archive: "p", unzip: "u", dualPane: "d", download: "s", switchDrive: "w", settings: ","
+    };
+
+    const knownShortcutLabels = {
+        mark: "Zaznacz", copy: "Kopiuj", cut: "Wytnij", paste: "Wklej", delete: "Usuń",
+        newFile: "Nowy Plik", newDir: "Nowy Folder", terminal: "Terminal", archive: "Spakuj",
+        unzip: "Rozpakuj", download: "Pobierz", gitMacro: "Makro Git", dualPane: "Dual Pane", switchDrive: "Zmień dysk", settings: "Ustawienia (Ctrl)"
     };
 
     function formatSc(key, needsShift) {
@@ -77,7 +96,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const scBar = document.querySelector('.bottom-shortcuts');
         if (!scBar) return;
 
+        let settingsShortcut = (shortcuts.settings || ',').toUpperCase();
+        let globalShortcuts = `<span>[Ctrl+${settingsShortcut}] Ustawienia</span>`;
+
         if (currentMode === 'local') {
+            let driveShortcutHtml = osType === 'windows' ? `<span>${formatSc(shortcuts.switchDrive, false)} Zmien dysk</span>` : "";
             scBar.innerHTML = `
                 <span>${formatSc(shortcuts.mark, false)} Zaznacz plik</span>
                 <span>${formatSc(shortcuts.copy, false)} Kopiuj</span>
@@ -89,7 +112,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <span>${formatSc(shortcuts.terminal, false)} Terminal</span>
                 <span>${formatSc(shortcuts.archive, true)} Spakuj</span>
                 <span>${formatSc(shortcuts.unzip, false)} Rozpakuj</span>
+                ${driveShortcutHtml}
                 <span>[Enter] Otworz</span>
+                ${globalShortcuts}
             `;
         } else if (currentMode === 'cloud-browse' || currentMode === 'cloud') {
             scBar.innerHTML = `
@@ -97,9 +122,27 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <span>${formatSc(shortcuts.download, false)} Pobierz na dysk</span>
                 <span>${formatSc(shortcuts.delete, false)} Usun z Dysku</span>
                 <span>[Enter] Otworz (Pobiera do Cache)</span>
+                ${globalShortcuts}
+            `;
+        } else if (currentMode === 'git') {
+            scBar.innerHTML = `
+                <span>[Tab] Nawiguj po elementach</span>
+                <span>[Enter] Skanuj / Szukaj / Wybierz element</span>
+                ${globalShortcuts}
+            `;
+        } else if (currentMode === 'cleaner') {
+            let cleanerHtml = `<span>[1 / T] Tymczasowe pliki systemu (Temp)</span><span>[2 / C] Cache Google Drive</span>`;
+            if (osType === 'windows') {
+                cleanerHtml += `<span>[3 / N] Niestandardowe foldery</span>`;
+            }
+            scBar.innerHTML = cleanerHtml + globalShortcuts;
+        } else if (currentMode === 'settings') {
+            scBar.innerHTML = `
+                <span>[Enter] Zapisz skróty / Dodaj folder</span>
+                ${globalShortcuts}
             `;
         } else {
-            scBar.innerHTML = "";
+            scBar.innerHTML = globalShortcuts;
         }
     }
 
@@ -116,6 +159,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             customTerminal = s.customTerminal || "";
             cacheCleanupDays = s.cacheCleanupDays !== undefined ? s.cacheCleanupDays : 7;
             projectsPath = s.projectsPath || "";
+            customCleanPaths = s.customCleanPaths || [];
             if (s.shortcuts) shortcuts = s.shortcuts;
 
             if (defaultPath !== "" && localDirState === "") {
@@ -133,7 +177,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 appScale: appScale, showHidden: showHidden, showExtensions: showExtensions,
                 foldersFirst: foldersFirst, isDarkTheme: isDarkTheme, defaultPath: defaultPath,
                 confirmDelete: confirmDelete, customTerminal: customTerminal, cacheCleanupDays: cacheCleanupDays,
-                projectsPath: projectsPath, shortcuts: shortcuts
+                projectsPath: projectsPath, customCleanPaths: customCleanPaths, shortcuts: shortcuts
             });
             updateShortcutUI();
         } catch(err) {}
@@ -169,7 +213,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             selectedFiles.clear();
             loadRangerView(e.target.value);
         }
-        e.target.blur();
+    });
+
+    driveSelector.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter' || e.key === 'Escape') {
+            e.preventDefault();
+            e.target.blur();
+        }
     });
 
     if (driveLogoutBtn) {
@@ -187,7 +238,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function showAlert(message) {
-        alertText.textContent = message;
+        alertText.innerText = message;
         customAlert.style.display = 'flex';
         alertOk.focus();
     }
@@ -736,7 +787,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (e.key === '2') { e.preventDefault(); document.querySelector('[data-view="cloud"]')?.click(); return; }
             if (e.key === '3') { e.preventDefault(); document.querySelector('[data-view="git"]')?.click(); return; }
             if (e.key === '4') { e.preventDefault(); document.querySelector('[data-view="cleaner"]')?.click(); return; }
-            if (e.key === '5' || e.key === ',') { e.preventDefault(); document.getElementById('settings-btn')?.click(); return; }
+            
+            const settingsSc = (shortcuts.settings || ',').toLowerCase();
+            if (e.key.toLowerCase() === settingsSc) {
+                e.preventDefault(); document.getElementById('settings-btn')?.click(); return;
+            }
         }
 
         if (e.key === 'Escape') {
@@ -746,7 +801,51 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
 
-        if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
+        if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') {
+            if (e.key === 'Enter') {
+                if (document.activeElement.id === 'g-client-secret') {
+                    document.getElementById('auth-btn')?.click();
+                } else if (document.activeElement.id === 'git-path-input') {
+                    document.getElementById('git-scan-btn')?.click();
+                } else if (document.activeElement.id === 'git-search-input') {
+                    document.getElementById('git-search-btn')?.click();
+                } else if (document.activeElement.id === 'settings-add-custom-path' && osType === 'windows') {
+                    document.getElementById('settings-btn-add-custom-path')?.click();
+                }
+            }
+            return;
+        }
+
+        if (currentMode === 'cleaner') {
+            if (osType === 'windows' && (e.key === '1' || e.key.toLowerCase() === 't')) {
+                e.preventDefault();
+                document.getElementById('clean-btn')?.click();
+                return;
+            }
+            if (e.key === '2' || e.key.toLowerCase() === 'c') {
+                e.preventDefault();
+                document.getElementById('clean-cache-btn')?.click();
+                return;
+            }
+            if (osType === 'windows' && (e.key === '3' || e.key.toLowerCase() === 'n')) {
+                e.preventDefault();
+                document.getElementById('clean-custom-btn')?.click();
+                return;
+            }
+        }
+        
+        if (currentMode !== 'local' && currentMode !== 'cloud-browse') {
+            return;
+        }
+
+        if (osType === 'windows' && e.key.toLowerCase() === (shortcuts.switchDrive || 'w').toLowerCase() && !e.ctrlKey) {
+            e.preventDefault();
+            const ds = document.getElementById('drive-selector');
+            if (ds && ds.style.display !== 'none') {
+                ds.focus();
+            }
+            return;
+        }
         
         if (e.key === 'ArrowDown') {
             e.preventDefault();
@@ -876,6 +975,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 `;
                 setTimeout(() => {
+                    document.getElementById('g-client-id')?.focus();
                     document.getElementById('auth-btn').addEventListener('click', async () => {
                         const clientId = document.getElementById('g-client-id').value;
                         const clientSecret = document.getElementById('g-client-secret').value;
@@ -901,8 +1001,34 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'git':
                 fileOpenBar.style.display = 'none';
                 viewTitle.textContent = 'Projekty Git';
+                
+                let isGit = false;
+                try {
+                    isGit = await window.go.main.App.IsGitInstalled();
+                } catch(e) {}
+
+                if (!isGit) {
+                    fileArea.innerHTML = `
+                        <div class="standard-view" style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box;">
+                            <h2 style="color: #ff5555; margin-top: 0;">Brak zainstalowanego Git</h2>
+                            <p style="opacity: 0.8; max-width: 400px; margin-bottom: 20px;">Modul "Projekty Git" wymaga zainstalowanego w systemie narzedzia Git (dodanego do PATH).</p>
+                            <button class="btn primary" id="git-download-btn">Pobierz Git z oficjalnej strony</button>
+                        </div>
+                    `;
+                    setTimeout(() => {
+                        document.getElementById('git-download-btn')?.addEventListener('click', async () => {
+                            try {
+                                await window.go.main.App.OpenFileCustom("https://git-scm.com/downloads", "");
+                            } catch(err) {
+                                showAlert(err);
+                            }
+                        });
+                    }, 0);
+                    break;
+                }
+
                 fileArea.innerHTML = `
-                    <div class="standard-view" style="padding: 20px; display: flex; gap: 20px; height: 100%; box-sizing: border-box;">
+                    <div class="standard-view" style="width: 100%; height: 100%; box-sizing: border-box; padding: clamp(20px, 3vw, 40px); display: flex; gap: 20px;">
                         <div style="flex: 1; border-right: 1px solid var(--border); padding-right: 20px; overflow-y: auto; min-width: 0;">
                             <h3 style="margin-top:0; color: var(--accent);">Lokalne Repozytoria</h3>
                             <div style="display: flex; gap: 10px; margin-bottom: 10px;">
@@ -924,6 +1050,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 `;
                 setTimeout(() => {
+                    document.getElementById('git-path-input')?.focus();
                     const scanBtn = document.getElementById('git-scan-btn');
                     const localResDiv = document.getElementById('git-local-results');
                     const pathInput = document.getElementById('git-path-input');
@@ -946,25 +1073,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                             } else {
                                 repos.forEach(repo => {
                                     const d = document.createElement('div');
-                                    d.style.cssText = "padding: 12px; border: 1px solid var(--border); background: var(--bg-panel); border-left: 4px solid var(--accent); cursor: pointer; display: flex; flex-direction: column; border-radius: 4px; overflow: hidden;";
+                                    d.tabIndex = 0;
+                                    d.style.cssText = "padding: 12px; border: 1px solid var(--border); background: var(--bg-panel); border-left: 4px solid var(--accent); cursor: pointer; display: flex; justify-content: space-between; align-items: center;";
+                                    d.addEventListener('focus', () => d.style.borderColor = 'var(--accent)');
+                                    d.addEventListener('blur', () => d.style.borderColor = 'var(--border)');
                                     
                                     const statusColor = repo.status === "czyste" ? "var(--dir-color)" : "#ff79c6";
                                     
                                     d.innerHTML = `
-                                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
-                                            <div style="font-weight: bold; font-size: 1.1em; color: var(--text-main); flex: 1;">${repo.name}</div>
-                                            <div style="font-weight: bold; flex-shrink: 0;">[${repo.branch}]</div>
+                                        <div style="flex: 1; min-width: 0;">
+                                            <div class="text-ellipsis" style="font-weight: bold; font-size: 1.1em; color: var(--text-main);">${repo.name}</div>
+                                            <div class="text-ellipsis" style="font-size: 0.85em; opacity: 0.7; margin-top: 4px;">${repo.path}</div>
                                         </div>
-                                        <div style="font-size: 0.85em; opacity: 0.7; margin-top: 4px;">${repo.path}</div>
-                                        <div style="color: ${statusColor}; font-size: 0.9em; margin-top: 4px;">${repo.status}</div>
+                                        <div style="flex-shrink: 0; text-align: right;">
+                                            <div style="font-weight: bold; margin-bottom: 4px;">[${repo.branch}]</div>
+                                            <div style="color: ${statusColor}; font-size: 0.9em;">${repo.status}</div>
+                                        </div>
                                     `;
-                                    d.addEventListener('click', async () => {
+                                    const action = async () => {
                                         detailsPanel.innerHTML = `<span style="color: var(--accent);">Wczytywanie szczegolow...</span>`;
                                         try {
                                             const branches = await window.go.main.App.GetLocalGitBranches(repo.path);
                                             const commits = await window.go.main.App.GetGitHistory(repo.path);
                                             
-                                            detailsPanel.innerHTML = `<h3 style="margin-top:0;">Szczegoly: ${repo.name}</h3>`;
+                                            detailsPanel.innerHTML = `<h3 class="text-ellipsis" style="margin-top:0;">Szczegoly: ${repo.name}</h3>`;
                                             
                                             const branchHeader = document.createElement('h4');
                                             branchHeader.style.color = "var(--accent)";
@@ -1015,14 +1147,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             } else {
                                                 commits.forEach(c => {
                                                     const cd = document.createElement('div');
-                                                    cd.style.cssText = "padding: 8px; border-bottom: 1px solid var(--border); cursor: pointer; display: flex; flex-direction: column; overflow: hidden;";
+                                                    cd.tabIndex = 0;
+                                                    cd.style.cssText = "padding: 8px; border-bottom: 1px solid var(--border); cursor: pointer; display: flex; flex-direction: column; outline: none; border: 1px solid transparent;";
+                                                    cd.addEventListener('focus', () => cd.style.borderColor = 'var(--accent)');
+                                                    cd.addEventListener('blur', () => cd.style.borderColor = 'transparent');
+                                                    
                                                     cd.innerHTML = `
-                                                        <div style="width: 100%;">
+                                                        <div class="text-ellipsis" style="width: 100%;">
                                                             <span style="color: var(--accent);">${c.hash}</span> - ${c.message}
                                                         </div>
                                                         <div style="opacity:0.5; font-size: 0.8em; margin-top: 4px;">(${c.date})</div>
                                                     `;
-                                                    cd.addEventListener('click', async () => {
+                                                    const commitAction = async () => {
                                                         const ok = await showConfirmPrompt(`Przywrocic (checkout) do: ${c.hash}?`);
                                                         if(ok) {
                                                             try {
@@ -1033,12 +1169,28 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                                 showAlert(err);
                                                             }
                                                         }
+                                                    };
+                                                    cd.addEventListener('click', commitAction);
+                                                    cd.addEventListener('keydown', (e) => {
+                                                        if(e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            commitAction();
+                                                        }
                                                     });
                                                     detailsPanel.appendChild(cd);
                                                 });
                                             }
                                         } catch(err) {
                                             detailsPanel.innerHTML = `Blad: ${err}`;
+                                        }
+                                    };
+                                    d.addEventListener('click', action);
+                                    d.addEventListener('keydown', (e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            action();
                                         }
                                     });
                                     localResDiv.appendChild(d);
@@ -1061,33 +1213,57 @@ document.addEventListener('DOMContentLoaded', async () => {
                             } else {
                                 repos.forEach(repo => {
                                     const d = document.createElement('div');
-                                    d.style.cssText = "padding: 8px; border: 1px solid var(--border); background: var(--bg-panel); cursor: pointer; display: flex; flex-direction: column; overflow: hidden;";
+                                    d.tabIndex = 0;
+                                    d.style.cssText = "padding: 8px; border: 1px solid var(--border); background: var(--bg-panel); cursor: pointer; display: flex; flex-direction: column; outline: none;";
+                                    d.addEventListener('focus', () => d.style.borderColor = 'var(--accent)');
+                                    d.addEventListener('blur', () => d.style.borderColor = 'var(--border)');
+                                    
                                     d.innerHTML = `
-                                        <div style="font-weight: bold; color: var(--text-main);">${repo.fullName}</div>
-                                        <div style="font-size: 0.85em; opacity: 0.7; margin-top: 4px;">${repo.description || 'Brak opisu'}</div>
+                                        <div class="text-ellipsis" style="font-weight: bold; color: var(--text-main);">${repo.fullName}</div>
+                                        <div class="text-ellipsis" style="font-size: 0.85em; opacity: 0.7; margin-top: 4px;">${repo.description || 'Brak opisu'}</div>
                                     `;
-                                    d.addEventListener('click', async () => {
+                                    const action = async () => {
                                         detailsPanel.innerHTML = `<span style="color: var(--accent);">Wczytywanie wersji...</span>`;
                                         try {
                                             const branches = await window.go.main.App.GetGitHubBranches(repo.fullName);
-                                            detailsPanel.innerHTML = `<h3 style="margin-top:0;">Pobierz: ${repo.name}</h3>`;
+                                            detailsPanel.innerHTML = `<h3 class="text-ellipsis" style="margin-top:0;">Pobierz: ${repo.name}</h3>`;
                                             if(!branches) {
                                                 detailsPanel.innerHTML += "Brak galezi.";
                                                 return;
                                             }
                                             branches.forEach(b => {
                                                 const cd = document.createElement('div');
-                                                cd.style.cssText = "padding: 8px; border-bottom: 1px solid var(--border); cursor: pointer;";
+                                                cd.tabIndex = 0;
+                                                cd.style.cssText = "padding: 8px; border-bottom: 1px solid var(--border); cursor: pointer; outline: none; border: 1px solid transparent;";
+                                                cd.addEventListener('focus', () => cd.style.borderColor = 'var(--accent)');
+                                                cd.addEventListener('blur', () => cd.style.borderColor = 'transparent');
+                                                
                                                 cd.innerHTML = `Galez: <span style="color: var(--accent); font-weight: bold;">${b}</span>`;
-                                                cd.addEventListener('click', () => {
+                                                const cloneAction = () => {
                                                     cloneUrlCache = repo.cloneUrl;
                                                     cloneBranchCache = b;
                                                     showInputPrompt(`Podaj lokalny folder docelowy dla pobrania:`, 'clone');
+                                                };
+                                                cd.addEventListener('click', cloneAction);
+                                                cd.addEventListener('keydown', (e) => {
+                                                    if(e.key === 'Enter') {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        cloneAction();
+                                                    }
                                                 });
                                                 detailsPanel.appendChild(cd);
                                             });
                                         } catch(err) {
                                             detailsPanel.innerHTML = `Blad: ${err}`;
+                                        }
+                                    };
+                                    d.addEventListener('click', action);
+                                    d.addEventListener('keydown', (e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            action();
                                         }
                                     });
                                     remoteResDiv.appendChild(d);
@@ -1103,23 +1279,51 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'cleaner':
                 fileOpenBar.style.display = 'none';
                 viewTitle.textContent = 'Oczyszczanie dysku';
-                fileArea.innerHTML = `
-                    <div class="standard-view">
-                        <button class="btn primary" id="clean-btn">Pliki tymczasowe systemu</button>
+                
+                let cleanerHtml = `<div class="standard-view" style="width: 100%; box-sizing: border-box; padding: clamp(20px, 3vw, 40px);">`;
+                
+                if (osType === 'windows') {
+                    cleanerHtml += `
+                        <button class="btn primary" id="clean-btn">Tymczasowe pliki systemu (Temp) [1 / T]</button>
                         <br><br>
-                        <button class="btn primary" id="clean-cache-btn">Cache Google Drive</button>
-                    </div>
-                `;
+                        <button class="btn primary" id="clean-cache-btn">Cache Google Drive [2 / C]</button>
+                        <br><br>
+                        <button class="btn primary" id="clean-custom-btn">Niestandardowe foldery [3 / N]</button>
+                    `;
+                } else {
+                    cleanerHtml += `
+                        <button class="btn primary" id="clean-cache-btn">Cache Google Drive [2 / C]</button>
+                        <br><br>
+                        <p style="opacity: 0.7;">Oczyszczanie plikow Temp OS oraz niestandardowych folderow jest dostepne tylko na systemie Windows.</p>
+                    `;
+                }
+                cleanerHtml += `</div>`;
+                fileArea.innerHTML = cleanerHtml;
+                
                 setTimeout(() => {
-                    document.getElementById('clean-btn').addEventListener('click', async () => {
-                        try {
-                            const result = await window.go.main.App.CleanTempFiles();
-                            showAlert(result);
-                        } catch (err) {
-                            showAlert(err);
-                        }
-                    });
-                    document.getElementById('clean-cache-btn').addEventListener('click', async () => {
+                    if (osType === 'windows') {
+                        document.getElementById('clean-btn')?.focus();
+                        document.getElementById('clean-btn')?.addEventListener('click', async () => {
+                            try {
+                                const result = await window.go.main.App.CleanTempFiles();
+                                showAlert(result);
+                            } catch (err) {
+                                showAlert(err);
+                            }
+                        });
+                        document.getElementById('clean-custom-btn')?.addEventListener('click', async () => {
+                            try {
+                                const result = await window.go.main.App.CleanCustomPaths();
+                                showAlert(result);
+                            } catch (err) {
+                                showAlert(err);
+                            }
+                        });
+                    } else {
+                        document.getElementById('clean-cache-btn')?.focus();
+                    }
+                    
+                    document.getElementById('clean-cache-btn')?.addEventListener('click', async () => {
                         try {
                             const result = await window.go.main.App.CleanAppCache();
                             showAlert(result);
@@ -1132,14 +1336,38 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'settings':
                 fileOpenBar.style.display = 'none';
                 viewTitle.textContent = 'Ustawienia';
+                
+                let shortcutsHtml = '';
+                for (const [key, value] of Object.entries(shortcuts)) {
+                    if (key === 'switchDrive' && osType !== 'windows') continue;
+                    const label = knownShortcutLabels[key] || key;
+                    shortcutsHtml += `<div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>${label}:</span> <input type="text" data-shortcut="${key}" class="shortcut-input dynamic-shortcut" value="${value}"></div>`;
+                }
+
+                let customPathsHtml = '';
+                if (osType === 'windows') {
+                    customPathsHtml = `
+                        <h3 style="color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px;">Oczyszczanie niestandardowe</h3>
+                        <div style="margin-bottom: 2rem;">
+                            <p style="font-size: 0.85em; opacity: 0.7;">Zdefiniuj foldery, ktorych zawartosc ma byc usuwana podczas czyszczenia w zakladce "Oczyszczanie".</p>
+                            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                                <input type="text" id="settings-add-custom-path" class="input-field" placeholder="np. C:\\Pobrane\\Smieci" style="margin: 0; width: 100%; max-width: 500px;">
+                                <button class="btn primary" id="settings-btn-add-custom-path">Dodaj folder</button>
+                            </div>
+                            <div id="settings-custom-paths-list" style="display: flex; flex-direction: column; gap: 5px; max-width: 600px;">
+                            </div>
+                        </div>
+                    `;
+                }
+
                 fileArea.innerHTML = `
-                    <div class="standard-view" style="max-width: 800px; padding: 20px;">
+                    <div class="standard-view" style="width: 100%; height: 100%; box-sizing: border-box; padding: clamp(20px, 3vw, 40px);">
                         <div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
-                            <button class="btn primary" id="settings-open-config">Otwórz plik konfiguracyjny (JSON)</button>
-                            <button class="btn" id="settings-reload-config">Odśwież z pliku</button>
+                            <button class="btn primary" id="settings-open-config">Otworz plik konfiguracyjny (JSON)</button>
+                            <button class="btn" id="settings-reload-config">Odswiez z pliku</button>
                         </div>
                         
-                        <h3 style="color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px;">Wygląd interfejsu</h3>
+                        <h3 style="color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px;">Wyglad interfejsu</h3>
                         <div style="margin-bottom: 2rem;">
                             <label style="display: block; margin-bottom: 8px; font-weight: bold;">
                                 Skala aplikacji: <span id="scale-val-display" style="color: var(--accent);">${appScale}x</span>
@@ -1147,54 +1375,57 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <input type="range" id="settings-scale-slider" min="0.5" max="2.0" step="0.1" value="${appScale}" style="width: 100%; max-width: 400px; cursor: pointer;">
                         </div>
 
+                        ${customPathsHtml}
+
                         <h3 style="color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px;">Opcje nawigacji i zachowania</h3>
                         <div style="margin-bottom: 2rem; display: flex; flex-direction: column; gap: 1.5rem;">
+                            <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="settings-show-hidden-cb"> 
+                                <span>Pokaż ukryte pliki</span>
+                            </label>
+                            <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="settings-show-extensions-cb"> 
+                                <span>Pokaż rozszerzenia plików</span>
+                            </label>
+                            <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="settings-folders-first-cb"> 
+                                <span>Pokazuj foldery na początku listy</span>
+                            </label>
                             <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                                 <input type="checkbox" id="settings-confirm-delete-cb"> 
                                 <span>Pytaj o potwierdzenie przed usunięciem elementów</span>
                             </label>
                             
                             <div>
-                                <label style="display: block; margin-bottom: 4px; font-weight: bold;">Domyślny katalog startowy</label>
-                                <div style="font-size: 0.85em; opacity: 0.7; margin-bottom: 8px;">Zostaw puste, aby otwierać systemowy katalog domowy użytkownika.</div>
-                                <input type="text" id="settings-default-path" class="input-field" value="${defaultPath}" placeholder="np. C:\\Users\\... lub /home/..." style="width: 100%; max-width: 500px;">
+                                <label style="display: block; margin-bottom: 4px; font-weight: bold;">Domyslny katalog startowy</label>
+                                <div style="font-size: 0.85em; opacity: 0.7; margin-bottom: 8px;">Zostaw puste, aby otwierac systemowy katalog domowy uzytkownika.</div>
+                                <input type="text" id="settings-default-path" class="input-field" value="${defaultPath}" placeholder="np. C:\\Users\\... lub /home/..." style="width: 100%; max-width: 600px;">
                             </div>
                             
                             <div>
                                 <label style="display: block; margin-bottom: 4px; font-weight: bold;">Niestandardowy emulator terminala</label>
-                                <div style="font-size: 0.85em; opacity: 0.7; margin-bottom: 8px;">Zostaw puste, aby używać domyślnego w systemie (cmd / Terminal / x-terminal-emulator).</div>
-                                <input type="text" id="settings-custom-terminal" class="input-field" value="${customTerminal}" placeholder="np. alacritty, kitty, wt" style="width: 100%; max-width: 500px;">
+                                <div style="font-size: 0.85em; opacity: 0.7; margin-bottom: 8px;">Zostaw puste, aby uzywac domyslnego w systemie (cmd / Terminal / x-terminal-emulator).</div>
+                                <input type="text" id="settings-custom-terminal" class="input-field" value="${customTerminal}" placeholder="np. alacritty, kitty, wt" style="width: 100%; max-width: 600px;">
                             </div>
                             
                             <div>
-                                <label style="display: block; margin-bottom: 4px; font-weight: bold;">Czas życia Cache (w dniach)</label>
-                                <div style="font-size: 0.85em; opacity: 0.7; margin-bottom: 8px;">Po ilu dniach aplikacja ma automatycznie czyścić pobrane pliki z Google Drive (0 = wyłączone).</div>
+                                <label style="display: block; margin-bottom: 4px; font-weight: bold;">Czas zycia Cache (w dniach)</label>
+                                <div style="font-size: 0.85em; opacity: 0.7; margin-bottom: 8px;">Po ilu dniach aplikacja ma automatycznie czyscic pobrane pliki z Google Drive (0 = wylaczone).</div>
                                 <input type="number" id="settings-cache-days" class="input-field" value="${cacheCleanupDays}" min="0" max="365" style="width: 120px;">
                             </div>
                         </div>
 
-                        <h3 style="color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px;">Skróty klawiszowe</h3>
-                        <div style="margin-bottom: 2rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px;">
-                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Zaznacz:</span> <input type="text" id="sc-mark" class="shortcut-input" value="${shortcuts.mark}"></div>
-                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Kopiuj:</span> <input type="text" id="sc-copy" class="shortcut-input" value="${shortcuts.copy}"></div>
-                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Wytnij:</span> <input type="text" id="sc-cut" class="shortcut-input" value="${shortcuts.cut}"></div>
-                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Wklej:</span> <input type="text" id="sc-paste" class="shortcut-input" value="${shortcuts.paste}"></div>
-                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Usuń:</span> <input type="text" id="sc-delete" class="shortcut-input" value="${shortcuts.delete}"></div>
-                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Nowy Plik:</span> <input type="text" id="sc-newFile" class="shortcut-input" value="${shortcuts.newFile}"></div>
-                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Nowy Folder:</span> <input type="text" id="sc-newDir" class="shortcut-input" value="${shortcuts.newDir}"></div>
-                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Terminal:</span> <input type="text" id="sc-terminal" class="shortcut-input" value="${shortcuts.terminal}"></div>
-                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Spakuj:</span> <input type="text" id="sc-archive" class="shortcut-input" value="${shortcuts.archive}"></div>
-                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Rozpakuj:</span> <input type="text" id="sc-unzip" class="shortcut-input" value="${shortcuts.unzip}"></div>
-                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Pobierz:</span> <input type="text" id="sc-download" class="shortcut-input" value="${shortcuts.download}"></div>
-                            <div class="shortcut-item" style="width: auto; margin:0; align-items:center;"><span>Dual Pane:</span> <input type="text" id="sc-dualPane" class="shortcut-input" value="${shortcuts.dualPane}"></div>
+                        <h3 style="color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px;">Skroty klawiszowe</h3>
+                        <div id="dynamic-shortcuts-container" style="margin-bottom: 2rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px;">
+                            ${shortcutsHtml}
                         </div>
                         <button class="btn primary" id="save-shortcuts-btn" style="width: 100%; max-width: 300px; margin-bottom: 2rem;">Zapisz Skróty</button>
 
-                        <h3 style="color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px;">Zaawansowane powiązania plików</h3>
-                        <p style="font-size: 0.85em; opacity: 0.7;">Konfiguracja aplikacji domyślnych do otwierania określonych rozszerzeń plików (wymaga edycji w formacie JSON).</p>
+                        <h3 style="color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px;">Zaawansowane powiazania plikow</h3>
+                        <p style="font-size: 0.85em; opacity: 0.7;">Konfiguracja aplikacji domyslnych do otwierania okreslonych rozszerzen plikow (wymaga edycji w formacie JSON).</p>
                         <div style="margin-bottom: 2rem; display: flex; gap: 1rem;">
-                            <button class="btn primary" id="settings-open-json">Edytuj powiązania (JSON)</button>
-                            <button class="btn" id="settings-reload-json">Odśwież powiązania</button>
+                            <button class="btn primary" id="settings-open-json">Edytuj powiazania (JSON)</button>
+                            <button class="btn" id="settings-reload-json">Odswiez powiazania</button>
                         </div>
                     </div>
                 `;
@@ -1210,6 +1441,68 @@ document.addEventListener('DOMContentLoaded', async () => {
                     slider.addEventListener('change', (e) => {
                         appScale = parseFloat(e.target.value);
                         document.documentElement.style.setProperty('--app-scale', appScale);
+                        saveSettings();
+                    });
+
+                    if (osType === 'windows') {
+                        const customPathInput = document.getElementById('settings-add-custom-path');
+                        const customPathBtn = document.getElementById('settings-btn-add-custom-path');
+                        const customPathsList = document.getElementById('settings-custom-paths-list');
+
+                        function renderCustomPaths() {
+                            customPathsList.innerHTML = '';
+                            if (customCleanPaths.length === 0) {
+                                customPathsList.innerHTML = '<span style="opacity: 0.5;">Brak folderow.</span>';
+                                return;
+                            }
+                            customCleanPaths.forEach((p, idx) => {
+                                const item = document.createElement('div');
+                                item.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px;";
+                                item.innerHTML = `<span class="text-ellipsis" style="flex: 1; margin-right: 10px;">${p}</span>`;
+                                const delBtn = document.createElement('button');
+                                delBtn.className = "btn danger";
+                                delBtn.style.padding = "2px 8px";
+                                delBtn.textContent = "Usun";
+                                delBtn.onclick = async () => {
+                                    customCleanPaths.splice(idx, 1);
+                                    await saveSettings();
+                                    renderCustomPaths();
+                                };
+                                item.appendChild(delBtn);
+                                customPathsList.appendChild(item);
+                            });
+                        }
+                        renderCustomPaths();
+
+                        customPathBtn.addEventListener('click', async () => {
+                            const val = customPathInput.value.trim();
+                            if (val && !customCleanPaths.includes(val)) {
+                                customCleanPaths.push(val);
+                                customPathInput.value = '';
+                                await saveSettings();
+                                renderCustomPaths();
+                            }
+                        });
+                    }
+
+                    const showHiddenCb = document.getElementById('settings-show-hidden-cb');
+                    showHiddenCb.checked = showHidden;
+                    showHiddenCb.addEventListener('change', (e) => {
+                        showHidden = e.target.checked;
+                        saveSettings();
+                    });
+
+                    const showExtensionsCb = document.getElementById('settings-show-extensions-cb');
+                    showExtensionsCb.checked = showExtensions;
+                    showExtensionsCb.addEventListener('change', (e) => {
+                        showExtensions = e.target.checked;
+                        saveSettings();
+                    });
+
+                    const foldersFirstCb = document.getElementById('settings-folders-first-cb');
+                    foldersFirstCb.checked = foldersFirst;
+                    foldersFirstCb.addEventListener('change', (e) => {
+                        foldersFirst = e.target.checked;
                         saveSettings();
                     });
 
@@ -1257,18 +1550,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
 
                     document.getElementById('save-shortcuts-btn').addEventListener('click', async () => {
-                        shortcuts.mark = document.getElementById('sc-mark').value;
-                        shortcuts.copy = document.getElementById('sc-copy').value;
-                        shortcuts.cut = document.getElementById('sc-cut').value;
-                        shortcuts.paste = document.getElementById('sc-paste').value;
-                        shortcuts.delete = document.getElementById('sc-delete').value;
-                        shortcuts.newFile = document.getElementById('sc-newFile').value;
-                        shortcuts.newDir = document.getElementById('sc-newDir').value;
-                        shortcuts.terminal = document.getElementById('sc-terminal').value;
-                        shortcuts.archive = document.getElementById('sc-archive').value;
-                        shortcuts.unzip = document.getElementById('sc-unzip').value;
-                        shortcuts.download = document.getElementById('sc-download').value;
-                        shortcuts.dualPane = document.getElementById('sc-dualPane').value;
+                        document.querySelectorAll('.dynamic-shortcut').forEach(input => {
+                            const key = input.getAttribute('data-shortcut');
+                            shortcuts[key] = input.value;
+                        });
                         await saveSettings();
                         showAlert("Zapisane.");
                     });

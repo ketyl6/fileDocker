@@ -2,6 +2,19 @@
 
 All notable changes to fileDocker are documented in this file.
 
+## [alpha3.1] - 2026-08-19
+
+### Fixed
+- Linux support (due to syscall using in app.go file Linux building was impossible)
+
+### Changed
+- Major bugfixes - changed style.css to match the themes
+
+### Planned in next updates
+- ***Plugins/Modules***
+- ***More launguages***
+- ***More bugfixes and testing***
+
 ## [alpha3] - 2026-08-12
 
 ### Added
