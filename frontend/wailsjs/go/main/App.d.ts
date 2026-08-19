@@ -22,6 +22,10 @@ export function DownloadFromDrive(arg1:string,arg2:string,arg3:string):Promise<s
 
 export function FileAction(arg1:string,arg2:Array<string>,arg3:string):Promise<void>;
 
+export function GetAvailableLanguages():Promise<Array<string>>;
+
+export function GetCustomModules():Promise<Array<main.CustomModule>>;
+
 export function GetDriveData(arg1:string):Promise<main.RangerState>;
 
 export function GetDrives():Promise<Array<string>>;
@@ -33,6 +37,8 @@ export function GetFileInfo(arg1:string):Promise<Record<string, any>>;
 export function GetGitHistory(arg1:string):Promise<Array<main.GitCommit>>;
 
 export function GetGitHubBranches(arg1:string):Promise<Array<string>>;
+
+export function GetLanguagePack(arg1:string):Promise<Record<string, string>>;
 
 export function GetLocalGitBranches(arg1:string):Promise<Array<string>>;
 

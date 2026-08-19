@@ -2,6 +2,37 @@
 
 All notable changes to fileDocker are documented in this file.
 
+## [alpha4] - 2026-08-20
+
+### Added
+- **Localization system (i18n)**: fileDocker is no longer Polish-only. Drop a `xx.json` file into `.config/fileDocker/lang/` (e.g. `en.json`) and, after a reload, it appears as a selectable language in Settings. Every string in the app - buttons, alerts (OK/Yes/No/Cancel), the bottom shortcut bar, the theme toggle, even system messages like "clipboard empty" or "saved" - is now routed through a translation function instead of being hardcoded. Deleting the default `pl.json` regenerates it with a complete, up-to-date key list, making it easy to use as a template for new translations. An `en.json` English pack is included as a working example.
+- **Custom Modules (plugins)**: a VSCode-style plugin system. Drop a subfolder into `.config/fileDocker/modules/` containing `manifest.json`, `index.html`, and `script.js`, and it's automatically picked up as a new item in the sidebar - clicking it injects the module's HTML into the main view and runs its JS in an isolated call. Modules can be individually toggled on/off from Settings (the disabled list is saved to `settings.json`), and every enabled module gets its own dynamic, rebindable keyboard shortcut for jumping straight to it. A "Todo List" module ships as a working example of the module API.
+- **Auto-reload on config change**: switching languages or toggling a module on/off now reloads the frontend in place, in the background - no more quitting and relaunching the app to see the change take effect.
+- **Custom cleanup paths**: a new "Custom folders" cleaner action (`customCleanPaths` setting) lets you manage a list of your own paths to purge, added/removed from Settings. Cleaning shows an alert listing exactly which folders were removed. New Cleaner-tab shortcuts: `1`/`T` (OS temp files), `2`/`C` (Google Drive cache), `3`/`N` (custom folders).
+- **Git-not-installed guard**: the Git Projects tab now checks for a working `git` on `PATH` before rendering; if it's missing, it shows a clear message and a download prompt instead of failing with errors.
+- **Windows quick drive switch**: a new `w` shortcut (Windows only) moves focus to the drive selector so you can change drives with the arrow keys and confirm with `Enter`/`Escape`, without touching the mouse.
+- **In-app view-option toggles**: "Show hidden files", "Show file extensions", and "Folders first" - previously settings.json-only despite being listed as GUI options - now have real checkboxes in the Settings tab.
+- **Shortcut bar in every tab**: the bottom keyboard-shortcut bar, previously only shown on Local Files and Google Drive, now also appears on Git Projects, Cleaner, and Settings.
+
+### Changed
+- **Custom cleanup paths now cross-platform**: after briefly being restricted to Windows alongside OS-temp cleanup, custom folder cleanup was reopened for Linux, macOS, and Windows alike. OS Temp-file cleanup and the drive-switch shortcut remain Windows-only, since they depend on Windows-specific paths and concepts.
+- **Settings shortcut is now remappable**: opening Settings (default `Ctrl+,`) is now listed in the shortcuts panel like any other action - it can be reassigned to a different key, but stays Ctrl-modified.
+
+### Fixed
+- **Settings button could silently vanish**: a missing DOM element during interface generation (introduced while wiring up modules/languages) could break the Settings button/menu entirely. A "bulletproof" fallback now guarantees a working Settings entry always renders in the sidebar, and duplicate-click handling was cleaned up.
+- **Broken shortcuts panel after refactor**: a `knownShortcutLabels` dictionary needed to render shortcut names was accidentally dropped during a rewrite, breaking the Settings shortcuts view; restored, alongside a pass to make sure literally every UI element (not just most) goes through translation.
+
+### Known issues / carried over
+- **Dual Pane** mode is still a stub - the setting and `d` shortcut exist, but activating it just shows a "coming soon" message.
+- Need for Google account logging improvement for easier and smoother user experience (OAuth2).
+- Custom modules run with direct HTML/JS injection - no sandboxing beyond the isolated call, so only install modules you trust.
+
+### Roadmap (proposed, not yet started)
+1. Improving OAuth2 (Google account logging) process.
+2. Completing **Dual Pane** (Total Commander-style split view).
+3. An advanced cleanup module - a smart scanner for reclaiming disk space from dev artifacts like Python `venv`, `node_modules`, and compiled C++ binaries.
+4. A way to discover/share community language packs and modules.
+
 ## [alpha3.1] - 2026-08-19
 
 ### Fixed

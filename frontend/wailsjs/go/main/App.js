@@ -42,6 +42,14 @@ export function FileAction(arg1, arg2, arg3) {
   return window['go']['main']['App']['FileAction'](arg1, arg2, arg3);
 }
 
+export function GetAvailableLanguages() {
+  return window['go']['main']['App']['GetAvailableLanguages']();
+}
+
+export function GetCustomModules() {
+  return window['go']['main']['App']['GetCustomModules']();
+}
+
 export function GetDriveData(arg1) {
   return window['go']['main']['App']['GetDriveData'](arg1);
 }
@@ -64,6 +72,10 @@ export function GetGitHistory(arg1) {
 
 export function GetGitHubBranches(arg1) {
   return window['go']['main']['App']['GetGitHubBranches'](arg1);
+}
+
+export function GetLanguagePack(arg1) {
+  return window['go']['main']['App']['GetLanguagePack'](arg1);
 }
 
 export function GetLocalGitBranches(arg1) {

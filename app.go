@@ -34,8 +34,17 @@ type AppSettings struct {
 	CustomTerminal   string            `json:"customTerminal"`
 	CacheCleanupDays int               `json:"cacheCleanupDays"`
 	ProjectsPath     string            `json:"projectsPath"`
+	Language         string            `json:"language"`
 	CustomCleanPaths []string          `json:"customCleanPaths"`
+	DisabledModules  []string          `json:"disabledModules"`
 	Shortcuts        map[string]string `json:"shortcuts"`
+}
+
+type CustomModule struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	HTML string `json:"html"`
+	JS   string `json:"js"`
 }
 
 func NewApp() *App {
@@ -44,7 +53,222 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.initSystem()
 	a.autoCleanCache()
+}
+
+func (a *App) initSystem() {
+	cfgDir, err := getDockerConfigDir()
+	if err != nil {
+		return
+	}
+
+	langDir := filepath.Join(cfgDir, "lang")
+	os.MkdirAll(langDir, 0755)
+	plPath := filepath.Join(langDir, "pl.json")
+	if _, err := os.Stat(plPath); os.IsNotExist(err) {
+		defaultPl := `{
+  "view_local": "Pliki lokalne",
+  "view_cloud": "Google Drive",
+  "view_git": "Projekty Git",
+  "view_cleaner": "Oczyszczanie",
+  "view_settings": "Ustawienia",
+  "theme_toggle": "Zmień motyw",
+  "btn_ok": "OK",
+  "btn_yes": "Tak",
+  "btn_no": "Nie",
+  "btn_cancel": "Anuluj",
+  "btn_open": "Otwórz",
+  "cm_new_file": "Nowy plik",
+  "cm_new_dir": "Nowy folder",
+  "cm_copy": "Kopiuj",
+  "cm_cut": "Wytnij",
+  "cm_paste": "Wklej",
+  "cm_delete": "Usuń",
+  "alert_logged_out": "Wylogowano.",
+  "prompt_new_file": "Podaj nazwę nowego pliku:",
+  "prompt_new_dir": "Podaj nazwę nowego folderu:",
+  "alert_saved": "Zapisano.",
+  "alert_clipboard_empty": "Schowek pusty.",
+  "confirm_delete": "Usunąć?",
+  "alert_downloading": "Pobieranie...",
+  "alert_download_done": "Zakończono.",
+  "alert_downloading_cache": "Pobieranie do cache...",
+  "prompt_archive_name": "Podaj nazwę archiwum (bez rozszerzenia):",
+  "alert_local_only": "Tylko lokalnie.",
+  "alert_cloning": "Trwa klonowanie...",
+  "alert_download_success": "Pobrano pomyślnie.",
+  "alert_created": "Utworzono: ",
+  "cloud_config": "Konfiguracja",
+  "cloud_client_id": "Client ID",
+  "cloud_client_secret": "Client Secret",
+  "cloud_login_btn": "Zaloguj",
+  "git_local_repos": "Lokalne Repozytoria",
+  "git_path_placeholder": "Ścieżka",
+  "git_scan_btn": "Skanuj",
+  "git_search_github": "Wyszukaj na GitHub",
+  "git_search_placeholder": "Nazwa repo lub użytkownika...",
+  "git_search_btn": "Szukaj",
+  "git_select_left": "Wybierz repozytorium z lewej strony...",
+  "git_no_git_title": "Brak zainstalowanego Git",
+  "git_no_git_desc": "Moduł wymaga zainstalowanego w systemie narzędzia Git (dodanego do PATH).",
+  "git_download_btn": "Pobierz Git z oficjalnej strony",
+  "git_scanning": "Skanowanie...",
+  "git_searching": "Szukanie...",
+  "git_no_results": "Brak wyników.",
+  "git_loading_details": "Wczytywanie szczegółów...",
+  "git_details": "Szczegóły: ",
+  "git_branches": "Gałęzie (Branches):",
+  "git_no_other_branches": "Brak innych gałęzi.",
+  "git_history": "Historia commitów:",
+  "git_no_commits": "Brak commitów.",
+  "git_checkout_branch": "Przełączyć na gałąź: ",
+  "git_checkout_commit": "Przywrócić (checkout) do: ",
+  "git_branch_changed": "Zmieniono gałąź.",
+  "git_version_changed": "Zmieniono wersję.",
+  "git_loading_versions": "Wczytywanie wersji...",
+  "git_download": "Pobierz: ",
+  "git_no_branches": "Brak gałęzi.",
+  "git_branch": "Gałąź: ",
+  "git_prompt_clone": "Podaj lokalny folder docelowy dla pobrania:",
+  "clean_temp_btn": "Tymczasowe pliki systemu (Temp)",
+  "clean_cache_btn": "Cache Google Drive",
+  "clean_custom_btn": "Niestandardowe foldery",
+  "clean_os_unsupported": "Oczyszczanie plików Temp OS oraz niestandardowych folderów jest dostępne tylko na systemie Windows.",
+  "settings_open_json": "Otwórz plik konfiguracyjny (JSON)",
+  "settings_reload": "Odśwież z pliku",
+  "settings_lang": "Język aplikacji (Language)",
+  "settings_lang_desc": "Dodaj nowe pliki .json do folderu lang w konfiguracji, by dodać języki.",
+  "settings_ui": "Wygląd interfejsu",
+  "settings_scale": "Skala aplikacji:",
+  "settings_custom_clean": "Oczyszczanie niestandardowe",
+  "settings_custom_clean_desc": "Zdefiniuj foldery, których zawartość ma być usuwana podczas czyszczenia w zakładce 'Oczyszczanie'.",
+  "settings_add_folder_btn": "Dodaj folder",
+  "settings_add_folder_ph": "np. C:\\Pobrane\\Smieci",
+  "settings_nav_options": "Opcje nawigacji i zachowania",
+  "settings_show_hidden": "Pokaż ukryte pliki",
+  "settings_show_ext": "Pokaż rozszerzenia plików",
+  "settings_folders_first": "Pokazuj foldery na początku listy",
+  "settings_confirm_del": "Pytaj o potwierdzenie przed usunięciem elementów",
+  "settings_def_path": "Domyślny katalog startowy",
+  "settings_def_path_desc": "Zostaw puste, aby otwierać systemowy katalog domowy użytkownika.",
+  "settings_custom_term": "Niestandardowy emulator terminala",
+  "settings_custom_term_desc": "Zostaw puste, aby używać domyślnego w systemie (cmd / Terminal / x-terminal-emulator).",
+  "settings_cache_days": "Czas życia Cache (w dniach)",
+  "settings_cache_days_desc": "Po ilu dniach aplikacja ma automatycznie czyścić pobrane pliki z Google Drive (0 = wyłączone).",
+  "settings_shortcuts_title": "Skróty klawiszowe",
+  "settings_save_shortcuts": "Zapisz Skróty",
+  "settings_assoc_title": "Zaawansowane powiązania plików",
+  "settings_assoc_desc": "Konfiguracja aplikacji domyślnych do otwierania określonych rozszerzeń plików (wymaga edycji w formacie JSON).",
+  "settings_edit_assoc": "Edytuj powiązania (JSON)",
+  "settings_reload_assoc": "Odśwież powiązania",
+  "settings_modules_title": "Zarządzanie modułami",
+  "settings_modules_desc": "Włącz lub wyłącz dynamiczne moduły ze ścieżki modules/.",
+  "modules_none": "Brak modułów.",
+  "sc_mark": "Zaznacz",
+  "sc_copy": "Kopiuj",
+  "sc_cut": "Wytnij",
+  "sc_paste": "Wklej",
+  "sc_delete": "Usuń",
+  "sc_newFile": "Nowy Plik",
+  "sc_newDir": "Nowy Folder",
+  "sc_terminal": "Terminal",
+  "sc_archive": "Spakuj",
+  "sc_unzip": "Rozpakuj",
+  "sc_download": "Pobierz",
+  "sc_gitMacro": "Makro Git",
+  "sc_dualPane": "Dual Pane",
+  "sc_switchDrive": "Zmień dysk",
+  "sc_settings": "Ustawienia (Ctrl)",
+  "txt_size": "Rozmiar:",
+  "txt_mod": "Modyfikacja:",
+  "txt_perm": "Uprawnienia:",
+  "txt_preview_remote": "Podgląd zdalny (naciśnij Enter aby pobrać/otworzyć)",
+  "alert_reloaded": "Odświeżono.",
+  "alert_reloading": "Przeładowywanie aplikacji...",
+  "alert_restart_required": "Zrestartuj aplikację, aby zastosować zmiany.",
+  "alert_no_preview": "Brak podglądu",
+  "alert_no_access": "Brak dostępu",
+  "alert_error": "Błąd"
+}`
+		os.WriteFile(plPath, []byte(defaultPl), 0644)
+	}
+
+	modDir := filepath.Join(cfgDir, "modules")
+	os.MkdirAll(modDir, 0755)
+}
+
+func (a *App) GetAvailableLanguages() []string {
+	cfgDir, _ := getDockerConfigDir()
+	langDir := filepath.Join(cfgDir, "lang")
+	entries, _ := os.ReadDir(langDir)
+	var langs []string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".json") {
+			langs = append(langs, strings.TrimSuffix(e.Name(), ".json"))
+		}
+	}
+	if len(langs) == 0 {
+		langs = append(langs, "pl")
+	}
+	return langs
+}
+
+func (a *App) GetLanguagePack(code string) map[string]string {
+	if code == "" {
+		code = "pl"
+	}
+	cfgDir, _ := getDockerConfigDir()
+	path := filepath.Join(cfgDir, "lang", code+".json")
+	data, err := os.ReadFile(path)
+	dict := make(map[string]string)
+	if err == nil {
+		json.Unmarshal(data, &dict)
+	}
+	return dict
+}
+
+func (a *App) GetCustomModules() []CustomModule {
+	cfgDir, _ := getDockerConfigDir()
+	modDir := filepath.Join(cfgDir, "modules")
+	var modules []CustomModule
+	entries, err := os.ReadDir(modDir)
+	if err != nil {
+		return modules
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			base := filepath.Join(modDir, entry.Name())
+			manifestPath := filepath.Join(base, "manifest.json")
+			manifestData, err := os.ReadFile(manifestPath)
+			if err != nil {
+				continue
+			}
+
+			var mod CustomModule
+			json.Unmarshal(manifestData, &mod)
+			if mod.ID == "" {
+				mod.ID = entry.Name()
+			}
+			if mod.Name == "" {
+				mod.Name = entry.Name()
+			}
+
+			htmlData, err := os.ReadFile(filepath.Join(base, "index.html"))
+			if err == nil {
+				mod.HTML = string(htmlData)
+			}
+
+			jsData, err := os.ReadFile(filepath.Join(base, "script.js"))
+			if err == nil {
+				mod.JS = string(jsData)
+			}
+
+			modules = append(modules, mod)
+		}
+	}
+	return modules
 }
 
 func getAppCacheDir() (string, error) {
@@ -100,7 +324,7 @@ func (a *App) CleanAppCache() (string, error) {
 		os.RemoveAll(filepath.Join(cacheDir, e.Name()))
 		count++
 	}
-	return fmt.Sprintf("Wyczyszczono pamięć podręczną.\nUsunięto %d plików z cache Google Drive.", count), nil
+	return fmt.Sprintf("Wyczyszczono pamięć podręczną.\nUsunięto %d plików.", count), nil
 }
 
 type FileInfo struct {
@@ -602,7 +826,7 @@ func (a *App) CleanTempFiles() (string, error) {
 			}
 		}
 	}
-	return fmt.Sprintf("Wyczyszczono tymczasowe pliki systemu.\nUsunięto %d elementów.\n\nSprawdzone lokalizacje:\n%s", deletedCount, strings.Join(cleanedDirs, "\n")), nil
+	return fmt.Sprintf("Wyczyszczono %d elementów.\n\nSprawdzone lokalizacje:\n%s", deletedCount, strings.Join(cleanedDirs, "\n")), nil
 }
 
 func (a *App) CleanCustomPaths() (string, error) {
@@ -612,7 +836,7 @@ func (a *App) CleanCustomPaths() (string, error) {
 
 	settings := a.GetSettings()
 	if len(settings.CustomCleanPaths) == 0 {
-		return "Brak zdefiniowanych niestandardowych folderów w Ustawieniach.", nil
+		return "Brak zdefiniowanych folderów.", nil
 	}
 
 	deletedCount := 0
@@ -639,9 +863,9 @@ func (a *App) CleanCustomPaths() (string, error) {
 		}
 	}
 	if len(cleanedDirs) == 0 {
-		return "Nie znaleziono i nie wyczyszczono żadnych prawidłowych folderów zdefiniowanych w ustawieniach.", nil
+		return "Nie znaleziono folderów.", nil
 	}
-	return fmt.Sprintf("Wyczyszczono foldery niestandardowe.\nUsunięto %d elementów.\n\nSprawdzone lokalizacje:\n%s", deletedCount, strings.Join(cleanedDirs, "\n")), nil
+	return fmt.Sprintf("Usunięto %d elementów.\n\nSprawdzone lokalizacje:\n%s", deletedCount, strings.Join(cleanedDirs, "\n")), nil
 }
 
 func getDockerConfigDir() (string, error) {
@@ -664,7 +888,9 @@ func (a *App) GetSettings() AppSettings {
 		CustomTerminal:   "",
 		CacheCleanupDays: 7,
 		ProjectsPath:     "",
+		Language:         "pl",
 		CustomCleanPaths: []string{},
+		DisabledModules:  []string{},
 		Shortcuts: map[string]string{
 			"copy":        "c",
 			"cut":         "x",
@@ -690,6 +916,12 @@ func (a *App) GetSettings() AppSettings {
 	data, err := os.ReadFile(path)
 	if err == nil {
 		json.Unmarshal(data, &defaultSettings)
+	}
+	if defaultSettings.Language == "" {
+		defaultSettings.Language = "pl"
+	}
+	if defaultSettings.DisabledModules == nil {
+		defaultSettings.DisabledModules = []string{}
 	}
 	a.SaveSettings(defaultSettings)
 	return defaultSettings

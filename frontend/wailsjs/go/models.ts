@@ -11,7 +11,9 @@ export namespace main {
 	    customTerminal: string;
 	    cacheCleanupDays: number;
 	    projectsPath: string;
+	    language: string;
 	    customCleanPaths: string[];
+	    disabledModules: string[];
 	    shortcuts: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
@@ -30,8 +32,28 @@ export namespace main {
 	        this.customTerminal = source["customTerminal"];
 	        this.cacheCleanupDays = source["cacheCleanupDays"];
 	        this.projectsPath = source["projectsPath"];
+	        this.language = source["language"];
 	        this.customCleanPaths = source["customCleanPaths"];
+	        this.disabledModules = source["disabledModules"];
 	        this.shortcuts = source["shortcuts"];
+	    }
+	}
+	export class CustomModule {
+	    id: string;
+	    name: string;
+	    html: string;
+	    js: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CustomModule(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.html = source["html"];
+	        this.js = source["js"];
 	    }
 	}
 	export class FileInfo {
