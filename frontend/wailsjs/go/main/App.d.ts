@@ -66,6 +66,8 @@ export function OpenTerminal(arg1:string,arg2:string):Promise<void>;
 
 export function ReadFilePreview(arg1:string):Promise<string>;
 
+export function RunModuleCommand(arg1:string,arg2:string,arg3:Array<string>):Promise<string>;
+
 export function SaveSettings(arg1:main.AppSettings):Promise<void>;
 
 export function ScanGitRepos(arg1:string):Promise<Array<main.GitRepo>>;

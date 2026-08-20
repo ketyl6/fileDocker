@@ -1,4 +1,4 @@
-# fileDocker ver. alpha4
+# fileDocker ver. alpha4.1
 
 **fileDocker** is a lightweight, cross-platform desktop file explorer built with [Wails](https://wails.io/) (Go backend + HTML/CSS/JS frontend). It's designed as a fast, keyboard-driven alternative to the default OS file manager, inspired by tools like **Ranger** and **Total Commander**.
 
@@ -50,11 +50,10 @@
 - An `en.json` English pack ships as a working example
 
 ### Modules (plugins)
-- A VSCode-style plugin system: drop a subfolder into `.config/fileDocker/modules/` containing `manifest.json`, `index.html`, and `script.js`, and it's automatically picked up as a new sidebar entry
+- A VSCode-style plugin system: drop a subfolder into `.config/fileDocker/modules/` containing `manifest.json`, `index.html`, and `script.js` (and backend script if it is needed), and it's automatically picked up as a new sidebar entry
 - Clicking a module injects its HTML into the main view and runs its JS in an isolated call
 - Modules can be individually enabled/disabled from Settings; the disabled list is saved to `settings.json`
 - Each enabled module gets its own dynamic, rebindable keyboard shortcut for jumping straight to it from anywhere in the app
-- A "Todo List" module ships as a working example of the module API
 
 ### Interface navigation
 - `Ctrl+1` / `Ctrl+2` / `Ctrl+3` / `Ctrl+4` jump directly between the Local Files, Google Drive, Git Projects, and Cleaner tabs; `Ctrl+,` (or `Ctrl+5`) opens Settings from anywhere
@@ -63,7 +62,7 @@
 
 ### Planned / in progress
 - **Dual Pane mode** (Total Commander–style split view) - the setting and keyboard shortcut (`d`) exist in the UI, but the feature is currently disabled to avoid destabilizing the column-view renderer. Triggering it shows a "coming in a future version" notice.
-- An advanced cleanup module that scans for reclaimable space from dev artifacts (Python `venv`, `node_modules`, compiled binaries, etc.)
+- **Custom themes** - themes that can be custom-made by the user is css or other not yet established format.
 
 ## Tech stack
 
@@ -171,7 +170,7 @@ wails build -clean
 
 fileDocker ships with Polish as the default UI language, but every string in the app now goes through a translation system, so any language can be added by dropping a JSON file into `.config/fileDocker/lang/` (see the Localization feature section above for details). An English pack (`en.json`) is included as a working example.
 
-## Known limitations (alpha4)
+## Known limitations (alpha4.1)
 
 - Dual Pane mode is present in settings/shortcuts but non-functional
 - `.rar` archiving/extraction depends on an external `rar` binary being installed and on `PATH`

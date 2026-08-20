@@ -2,6 +2,11 @@
 
 All notable changes to fileDocker are documented in this file.
 
+## [alpha4.1] - 2026-08-20
+
+### Added
+- **Added script support for the modules**: modules can now have more advanced scripts that can be written in any programming launguage.
+
 ## [alpha4] - 2026-08-20
 
 ### Added

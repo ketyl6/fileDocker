@@ -1430,3 +1430,47 @@ func (a *App) CloneRemoteRepo(cloneUrl, branch, destParent string) error {
 	}
 	return nil
 }
+
+func (a *App) RunModuleCommand(modId string, command string, args []string) (string, error) {
+	cfgDir, err := getDockerConfigDir()
+	if err != nil {
+		return "", err
+	}
+	modBaseDir := filepath.Join(cfgDir, "modules")
+
+	var actualModDir string
+	entries, err := os.ReadDir(modBaseDir)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				dirPath := filepath.Join(modBaseDir, entry.Name())
+				manifestPath := filepath.Join(dirPath, "manifest.json")
+				manifestData, err := os.ReadFile(manifestPath)
+				if err == nil {
+					var mod CustomModule
+					json.Unmarshal(manifestData, &mod)
+					if mod.ID == modId {
+						actualModDir = dirPath
+						break
+					}
+				}
+				if actualModDir == "" && entry.Name() == modId {
+					actualModDir = dirPath
+				}
+			}
+		}
+	}
+
+	if actualModDir == "" {
+		return "", fmt.Errorf("nie znaleziono fizycznego folderu dla modułu o ID: %s", modId)
+	}
+
+	cmd := exec.Command(command, args...)
+	cmd.Dir = actualModDir
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("błąd wykonania: %v | log: %s", err, string(out))
+	}
+	return string(out), nil
+}

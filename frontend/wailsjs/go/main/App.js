@@ -130,6 +130,10 @@ export function ReadFilePreview(arg1) {
   return window['go']['main']['App']['ReadFilePreview'](arg1);
 }
 
+export function RunModuleCommand(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RunModuleCommand'](arg1, arg2, arg3);
+}
+
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
 }
