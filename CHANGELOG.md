@@ -2,6 +2,11 @@
 
 All notable changes to fileDocker are documented in this file.
 
+## [legacy] - 2026-09-05
+
+### Status changed
+- **Moving to another framework**: due to high memory usage and pretty tricky and unstable Linux support fileDocker is changing its framework to much less "memory hungry" and more compatible Fyne framework. For now this version will not be updated further.
+
 ## [alpha4.1] - 2026-08-20
 
 ### Added

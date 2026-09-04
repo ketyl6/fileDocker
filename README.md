@@ -1,4 +1,4 @@
-# fileDocker ver. alpha4.1
+# fileDocker legacy
 
 **fileDocker** is a lightweight, cross-platform desktop file explorer built with [Wails](https://wails.io/) (Go backend + HTML/CSS/JS frontend). It's designed as a fast, keyboard-driven alternative to the default OS file manager, inspired by tools like **Ranger** and **Total Commander**.
 
@@ -170,7 +170,7 @@ wails build -clean
 
 fileDocker ships with Polish as the default UI language, but every string in the app now goes through a translation system, so any language can be added by dropping a JSON file into `.config/fileDocker/lang/` (see the Localization feature section above for details). An English pack (`en.json`) is included as a working example.
 
-## Known limitations (alpha4.1)
+## Known limitations (legacy)
 
 - Dual Pane mode is present in settings/shortcuts but non-functional
 - `.rar` archiving/extraction depends on an external `rar` binary being installed and on `PATH`
