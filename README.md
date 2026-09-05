@@ -55,7 +55,7 @@ fileDocker stores its data in your home directory, so it works the same way acro
 
 | Purpose        | Location                              |
 |-----------------|----------------------------------------|
-| Settings        | `~/config.json`                       |
+| Settings        | `~/.config/fileDocker/config.json`    |
 | Language files  | `~/.config/fileDocker/lang/*.json`    |
 
 Both are created automatically with sensible defaults the first time you run the app. You can edit everything from the in-app Settings screen, or by hand if you prefer.
